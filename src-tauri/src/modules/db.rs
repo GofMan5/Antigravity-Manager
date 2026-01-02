@@ -1,23 +1,60 @@
-use rusqlite::Connection;
-use base64::{Engine as _, engine::general_purpose};
-use std::path::PathBuf;
 use crate::utils::protobuf;
+use base64::{engine::general_purpose, Engine as _};
+use rusqlite::Connection;
+use std::path::PathBuf;
+
+fn get_antigravity_path() -> Option<PathBuf> {
+    if let Ok(config) = crate::modules::config::load_app_config() {
+        if let Some(path_str) = config.antigravity_executable {
+            let path = PathBuf::from(path_str);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+    crate::modules::process::get_antigravity_executable_path()
+}
 
 /// 获取 Antigravity 数据库路径（跨平台）
 pub fn get_db_path() -> Result<PathBuf, String> {
+    // 优先检查 --user-data-dir 参数指定的路径
+    if let Some(user_data_dir) = crate::modules::process::get_user_data_dir_from_process() {
+        let custom_db_path = user_data_dir.join("User").join("globalStorage").join("state.vscdb");
+        if custom_db_path.exists() {
+            return Ok(custom_db_path);
+        }
+    }
+
+    // 检查是否为便携模式
+    if let Some(antigravity_path) = get_antigravity_path() {
+        if let Some(parent_dir) = antigravity_path.parent() {
+            let portable_db_path = PathBuf::from(parent_dir)
+                .join("data")
+                .join("user-data")
+                .join("User")
+                .join("globalStorage")
+                .join("state.vscdb");
+
+            if portable_db_path.exists() {
+                return Ok(portable_db_path);
+            }
+        }
+    }
+
+    // 标准模式：使用系统默认路径
     #[cfg(target_os = "macos")]
     {
         let home = dirs::home_dir().ok_or("无法获取 Home 目录")?;
         Ok(home.join("Library/Application Support/Antigravity/User/globalStorage/state.vscdb"))
     }
-    
+
     #[cfg(target_os = "windows")]
     {
-        let appdata = std::env::var("APPDATA")
-            .map_err(|_| "无法获取 APPDATA 环境变量".to_string())?;
+        let appdata =
+            std::env::var("APPDATA").map_err(|_| "无法获取 APPDATA 环境变量".to_string())?;
         Ok(PathBuf::from(appdata).join("Antigravity\\User\\globalStorage\\state.vscdb"))
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         let home = dirs::home_dir().ok_or("无法获取 Home 目录")?;
@@ -33,8 +70,7 @@ pub fn inject_token(
     expiry: i64,
 ) -> Result<String, String> {
     // 1. 打开数据库
-    let conn = Connection::open(db_path)
-        .map_err(|e| format!("打开数据库失败: {}", e))?;
+    let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
 
     // 2. 读取当前数据
     let current_data: String = conn

@@ -14,6 +14,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub proxy: ProxyConfig,
     pub antigravity_executable: Option<String>, // [NEW] 手动指定的反重力程序路径
+    pub antigravity_args: Option<Vec<String>>, // [NEW] Antigravity 启动参数
     #[serde(default)]
     pub auto_launch: bool,  // 开机自动启动
 }
@@ -30,6 +31,7 @@ impl AppConfig {
             default_export_path: None,
             proxy: ProxyConfig::default(),
             antigravity_executable: None,
+            antigravity_args: None,
             auto_launch: false,
         }
     }
