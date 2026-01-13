@@ -489,19 +489,24 @@ impl StreamingState {
         }
 
         // 错误率过高时发出警告并尝试发送错误信号
-        if self.parse_error_count > 5 {
+        if self.parse_error_count > 3 {  // 降低阈值,更早通知用户
             tracing::error!(
                 "[SSE-Parser] High error rate detected ({} errors). Stream may be corrupted.",
                 self.parse_error_count
             );
             
             // [FIX] Explicitly signal error to client to prevent UI freeze
-            // Using "overloaded_error" type to suggest retry
+            // Using "network_error" type to suggest network/proxy issues
             chunks.push(self.emit("error", json!({
                 "type": "error",
                 "error": {
-                    "type": "overloaded_error",
-                    "message": "Stream connection unstable (too many parse errors). Please retry."
+                    "type": "network_error",
+                    "message": "网络连接不稳定,请检查您的网络或代理设置。",
+                    "code": "stream_decode_error",
+                    "details": {
+                        "error_count": self.parse_error_count,
+                        "suggestion": "请尝试: 1) 检查网络连接 2) 更换代理节点 3) 稍后重试"
+                    }
                 }
             })));
         }

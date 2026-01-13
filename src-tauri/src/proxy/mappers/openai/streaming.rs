@@ -235,7 +235,34 @@ pub fn create_openai_sse_stream(
                     }
                 }
                 Err(e) => {
-                    yield Err(format!("Upstream error: {}", e));
+                    use crate::proxy::mappers::error_classifier::classify_stream_error;
+                    let (error_type, user_message) = classify_stream_error(&e);
+                    
+                    tracing::error!(
+                        error_type = %error_type,
+                        user_message = %user_message,
+                        raw_error = %e,
+                        "OpenAI stream error occurred"
+                    );
+                    
+                    // 发送友好的 SSE 错误事件
+                    let error_chunk = json!({
+                        "id": &stream_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": &model,
+                        "choices": [],
+                        "error": {
+                            "type": error_type,
+                            "message": user_message,
+                            "code": "stream_error"
+                        }
+                    });
+                    
+                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&error_chunk).unwrap_or_default());
+                    yield Ok(Bytes::from(sse_out));
+                    yield Ok(Bytes::from("data: [DONE]\n\n"));
+                    break;
                 }
             }
         }
@@ -340,7 +367,36 @@ pub fn create_legacy_sse_stream(
                         }
                     }
                 }
-                Err(e) => yield Err(format!("Upstream error: {}", e)),
+                Err(e) => {
+                    use crate::proxy::mappers::error_classifier::classify_stream_error;
+                    let (error_type, user_message) = classify_stream_error(&e);
+                    
+                    tracing::error!(
+                        error_type = %error_type,
+                        user_message = %user_message,
+                        raw_error = %e,
+                        "Legacy stream error occurred"
+                    );
+                    
+                    // 发送友好的 SSE 错误事件
+                    let error_chunk = json!({
+                        "id": &stream_id,
+                        "object": "text_completion",
+                        "created": created_ts,
+                        "model": &model,
+                        "choices": [],
+                        "error": {
+                            "type": error_type,
+                            "message": user_message,
+                            "code": "stream_error"
+                        }
+                    });
+                    
+                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&error_chunk).unwrap_or_default());
+                    yield Ok(Bytes::from(sse_out));
+                    yield Ok(Bytes::from("data: [DONE]\n\n"));
+                    break;
+                }
             }
         }
         tracing::debug!("Stream finished. Yielding [DONE]");
@@ -608,7 +664,29 @@ pub fn create_codex_sse_stream(
                         }
                     }
                 }
-                Err(e) => yield Err(format!("Upstream error: {}", e)),
+                Err(e) => {
+                    use crate::proxy::mappers::error_classifier::classify_stream_error;
+                    let (error_type, user_message) = classify_stream_error(&e);
+                    
+                    tracing::error!(
+                        error_type = %error_type,
+                        user_message = %user_message,
+                        raw_error = %e,
+                        "Codex stream error occurred"
+                    );
+                    
+                    // 发送友好的错误事件
+                    let error_ev = json!({
+                        "type": "error",
+                        "error": {
+                            "type": error_type,
+                            "message": user_message,
+                            "code": "stream_error"
+                        }
+                    });
+                    yield Ok(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&error_ev).unwrap())));
+                    break;
+                }
             }
         }
 
