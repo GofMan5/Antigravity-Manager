@@ -66,6 +66,7 @@ where
         created: chrono::Utc::now().timestamp() as u64,
         model: String::new(),
         choices: vec![],
+        usage: None,
     };
 
     let mut content = String::new();
@@ -138,7 +139,11 @@ where
             }
         }
 
-        // OpenAIResponse 没有 usage 字段，跳过
+        if let Some(usage_data) = event.data.get("usage") {
+            if let Ok(usage) = serde_json::from_value::<OpenAIUsage>(usage_data.clone()) {
+                response.usage = Some(usage);
+            }
+        }
     }
 
     // 3. 构建最终的 choice

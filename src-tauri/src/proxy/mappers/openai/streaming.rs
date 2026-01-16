@@ -50,6 +50,38 @@ pub fn get_thought_signature() -> Option<String> {
     }
 }
 
+/// Extract and convert Gemini usageMetadata to OpenAI usage format
+fn extract_usage_metadata(u: &Value) -> Option<super::models::OpenAIUsage> {
+    use super::models::{OpenAIUsage, PromptTokensDetails};
+    
+    let prompt_tokens = u
+        .get("promptTokenCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    let completion_tokens = u
+        .get("candidatesTokenCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    let total_tokens = u
+        .get("totalTokenCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    let cached_tokens = u
+        .get("cachedContentTokenCount")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+
+    Some(OpenAIUsage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        prompt_tokens_details: cached_tokens.map(|ct| PromptTokensDetails {
+            cached_tokens: Some(ct),
+        }),
+        completion_tokens_details: None,
+    })
+}
+
 pub fn create_openai_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     model: String,
@@ -62,6 +94,7 @@ pub fn create_openai_sse_stream(
     
     let stream = async_stream::stream! {
         let mut emitted_tool_calls = std::collections::HashSet::new();
+        let mut final_usage: Option<super::models::OpenAIUsage> = None;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
@@ -92,6 +125,11 @@ pub fn create_openai_sse_stream(
                                     } else {
                                         json
                                     };
+
+                                    // Capture usageMetadata if present
+                                    if let Some(u) = actual_data.get("usageMetadata") {
+                                        final_usage = extract_usage_metadata(u);
+                                    }
 
                                     // Extract candidates
                                     if let Some(candidates) = actual_data.get("candidates").and_then(|c| c.as_array()) {
@@ -313,6 +351,21 @@ pub fn create_openai_sse_stream(
                 }
             }
         }
+        
+        // Emit usage event if captured before [DONE]
+        if let Some(usage) = final_usage {
+            let usage_chunk = json!({
+                "id": &stream_id,
+                "object": "chat.completion.chunk",
+                "created": created_ts,
+                "model": &model,
+                "choices": [],
+                "usage": usage
+            });
+            let sse_out = format!("data: {}\n\n", serde_json::to_string(&usage_chunk).unwrap_or_default());
+            yield Ok::<Bytes, String>(Bytes::from(sse_out));
+        }
+        
         // End of stream signal for OpenAI
         yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
     };
@@ -339,6 +392,7 @@ pub fn create_legacy_sse_stream(
     let created_ts = Utc::now().timestamp(); 
     
     let stream = async_stream::stream! {
+        let mut final_usage: Option<super::models::OpenAIUsage> = None;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
@@ -355,6 +409,11 @@ pub fn create_legacy_sse_stream(
 
                                 if let Ok(mut json) = serde_json::from_str::<Value>(json_part) {
                                     let actual_data = if let Some(inner) = json.get_mut("response").map(|v| v.take()) { inner } else { json };
+                                    
+                                    // Capture usageMetadata if present
+                                    if let Some(u) = actual_data.get("usageMetadata") {
+                                        final_usage = extract_usage_metadata(u);
+                                    }
                                     
                                     let mut content_out = String::new();
                                     if let Some(candidates) = actual_data.get("candidates").and_then(|c| c.as_array()) {
@@ -448,6 +507,21 @@ pub fn create_legacy_sse_stream(
                 }
             }
         }
+        
+        // Emit usage event if captured before [DONE]
+        if let Some(usage) = final_usage {
+            let usage_chunk = json!({
+                "id": &stream_id,
+                "object": "text_completion",
+                "created": created_ts,
+                "model": &model,
+                "choices": [],
+                "usage": usage
+            });
+            let sse_out = format!("data: {}\n\n", serde_json::to_string(&usage_chunk).unwrap_or_default());
+            yield Ok::<Bytes, String>(Bytes::from(sse_out));
+        }
+        
         tracing::debug!("Stream finished. Yielding [DONE]");
         yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
         // Final flush delay
@@ -488,6 +562,7 @@ pub fn create_codex_sse_stream(
         let mut full_content = String::new();
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut last_finish_reason = "stop".to_string();
+        let mut accumulated_usage: Option<super::models::OpenAIUsage> = None;
 
         while let Some(item) = gemini_stream.next().await {
             match item {
@@ -504,6 +579,11 @@ pub fn create_codex_sse_stream(
 
                             if let Ok(mut json) = serde_json::from_str::<Value>(json_part) {
                                 let actual_data = if let Some(inner) = json.get_mut("response").map(|v| v.take()) { inner } else { json };
+                                
+                                // Capture usageMetadata if present
+                                if let Some(u) = actual_data.get("usageMetadata") {
+                                    accumulated_usage = extract_usage_metadata(u);
+                                }
                                 
                                 // Capture finish reason
                                 if let Some(candidates) = actual_data.get("candidates").and_then(|c| c.as_array()) {

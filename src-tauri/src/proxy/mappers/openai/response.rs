@@ -162,6 +162,36 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
         }
     }
 
+    // Extract and map usage metadata from Gemini to OpenAI format
+    let usage = raw.get("usageMetadata").and_then(|u| {
+        let prompt_tokens = u
+            .get("promptTokenCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let completion_tokens = u
+            .get("candidatesTokenCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let total_tokens = u
+            .get("totalTokenCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let cached_tokens = u
+            .get("cachedContentTokenCount")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+
+        Some(super::models::OpenAIUsage {
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            prompt_tokens_details: cached_tokens.map(|ct| super::models::PromptTokensDetails {
+                cached_tokens: Some(ct),
+            }),
+            completion_tokens_details: None,
+        })
+    });
+
     OpenAIResponse {
         id: raw
             .get("responseId")
@@ -176,6 +206,7 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
             .unwrap_or("unknown")
             .to_string(),
         choices,
+        usage,
     }
 }
 
@@ -205,5 +236,48 @@ mod tests {
         };
         assert_eq!(content, "Hello!");
         assert_eq!(result.choices[0].finish_reason, Some("stop".to_string()));
+    }
+
+    #[test]
+    fn test_usage_metadata_mapping() {
+        let gemini_resp = json!({
+            "candidates": [{
+                "content": {"parts": [{"text": "Hello!"}]},
+                "finishReason": "STOP"
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "candidatesTokenCount": 50,
+                "totalTokenCount": 150,
+                "cachedContentTokenCount": 25
+            },
+            "modelVersion": "gemini-2.5-pro",
+            "responseId": "resp_123"
+        });
+
+        let result = transform_openai_response(&gemini_resp);
+        
+        assert!(result.usage.is_some());
+        let usage = result.usage.unwrap();
+        assert_eq!(usage.prompt_tokens, 100);
+        assert_eq!(usage.completion_tokens, 50);
+        assert_eq!(usage.total_tokens, 150);
+        assert!(usage.prompt_tokens_details.is_some());
+        assert_eq!(usage.prompt_tokens_details.unwrap().cached_tokens, Some(25));
+    }
+
+    #[test]
+    fn test_response_without_usage_metadata() {
+        let gemini_resp = json!({
+            "candidates": [{
+                "content": {"parts": [{"text": "Hello!"}]},
+                "finishReason": "STOP"
+            }],
+            "modelVersion": "gemini-2.5-pro",
+            "responseId": "resp_123"
+        });
+
+        let result = transform_openai_response(&gemini_resp);
+        assert!(result.usage.is_none());
     }
 }
