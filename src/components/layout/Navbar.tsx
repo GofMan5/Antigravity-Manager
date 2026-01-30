@@ -93,7 +93,7 @@ const Navbar = function Navbar() {
                         Antigravity
                     </span>
                     <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
-                        v2.4
+                        v0.0.1
                     </span>
                 </Link>
 
