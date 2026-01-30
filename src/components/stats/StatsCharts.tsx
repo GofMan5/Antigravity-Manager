@@ -1,5 +1,5 @@
 // File: src/components/stats/StatsCharts.tsx
-import React, { memo, useState, useCallback } from 'react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
     AreaChart, Area, BarChart, Bar, PieChart, Pie, 
@@ -8,7 +8,6 @@ import {
 import { motion } from 'framer-motion';
 import { Cpu, Users, TrendingUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { Button } from '../ui/button';
 
 // --- Types ---
 

@@ -1,5 +1,5 @@
 // File: src/components/stats/StatsSummary.tsx
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Zap, TrendingUp, Users, Cpu as CpuIcon } from 'lucide-react';
 import { motion } from 'framer-motion';

@@ -669,6 +669,7 @@ impl TokenManager {
 
         // 0. 读取当前调度配置
         let scheduling = self.sticky_config.read().await.clone();
+        tracing::info!("🔍 [Debug] get_token_internal | Mode: {:?} | Selected Accs: {} | Target: {}", scheduling.mode, scheduling.selected_accounts.len(), target_model);
         use crate::proxy::sticky_config::SchedulingMode;
         
         // 【新增】Selected 模式：仅保留选中的账号
