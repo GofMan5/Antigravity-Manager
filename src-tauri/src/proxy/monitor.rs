@@ -28,6 +28,7 @@ pub struct ProxyStats {
     pub total_requests: u64,
     pub success_count: u64,
     pub error_count: u64,
+    pub avg_latency: f64, // [NEW] Average latency in ms
 }
 
 pub struct ProxyMonitor {

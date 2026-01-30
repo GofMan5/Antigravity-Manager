@@ -49,7 +49,7 @@ struct GitHubRelease {
 /// Check for updates from GitHub releases
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
     let client = reqwest::Client::builder()
-        .user_agent("Antigravity-Manager")
+        .user_agent(crate::constants::USER_AGENT.as_str())
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| {

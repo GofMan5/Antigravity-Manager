@@ -1,27 +1,36 @@
-import { CheckCircle, Mail, Diamond, Gem, Circle } from 'lucide-react';
+import { memo, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '../ui/card';
+import { Progress } from '../ui/progress';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { Mail, Zap, CheckCircle, Gem, Diamond, Circle, Copy, Check } from 'lucide-react';
 import { Account } from '../../types/account';
-import { formatTimeRemaining } from '../../utils/format';
+import { useTranslation } from 'react-i18next';
+import { cn } from '../../lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 
 interface CurrentAccountProps {
-    account: Account | null;
+    account: Account | null | undefined;
     onSwitch?: () => void;
 }
 
-import { useTranslation } from 'react-i18next';
-
-function CurrentAccount({ account, onSwitch }: CurrentAccountProps) {
+const CurrentAccount = function CurrentAccount({ account, onSwitch }: CurrentAccountProps) {
     const { t } = useTranslation();
+    const [copied, setCopied] = useState(false);
+
     if (!account) {
         return (
-            <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200">
-                <h2 className="text-base font-semibold text-gray-900 dark:text-base-content mb-2 flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    {t('dashboard.current_account')}
-                </h2>
-                <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-sm">
+            <Card className="bg-zinc-900 border-white/10">
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2 text-zinc-100">
+                         <CheckCircle className="w-4 h-4 text-green-500" />
+                         {t('dashboard.current_account')}
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="text-center py-6 text-sm text-zinc-500">
                     {t('dashboard.no_active_account')}
-                </div>
-            </div>
+                </CardContent>
+            </Card>
         );
     }
 
@@ -29,144 +38,174 @@ function CurrentAccount({ account, onSwitch }: CurrentAccountProps) {
     const geminiFlashModel = account.quota?.models.find(m => m.name === 'gemini-3-flash');
     const claudeModel = account.quota?.models.find(m => m.name === 'claude-sonnet-4-5-thinking');
 
+    const getTierBadge = () => {
+        const tier = account.quota?.subscription_tier?.toLowerCase() || '';
+        if (tier.includes('ultra')) {
+            return (
+                <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20 flex items-center gap-1">
+                    <Gem className="w-3 h-3 fill-current" /> ULTRA
+                </Badge>
+            );
+        } else if (tier.includes('pro')) {
+            return (
+                <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20 flex items-center gap-1">
+                    <Diamond className="w-3 h-3 fill-current" /> PRO
+                </Badge>
+            );
+        } else {
+            return (
+                <Badge variant="outline" className="border-zinc-700 text-zinc-400 flex items-center gap-1">
+                    <Circle className="w-3 h-3" /> FREE
+                </Badge>
+            );
+        }
+    };
+
+    const copyToClipboard = async () => {
+        try {
+            await navigator.clipboard.writeText(account.email);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy', err);
+        }
+    };
+
+    // Helper to truncate email: donald20...@...shop
+    const truncateEmail = (email: string) => {
+        if (email.length <= 25) return email;
+        const [name, domain] = email.split('@');
+        const halfName = name.slice(0, Math.min(8, name.length));
+        const shortDomain = domain.length > 10 ? '...' + domain.slice(-8) : domain;
+        return `${halfName}...@${shortDomain}`;
+    };
+
     return (
-        <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 h-full flex flex-col">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-base-content mb-3 flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-500" />
-                {t('dashboard.current_account')}
-            </h2>
-
-            <div className="space-y-4 flex-1">
-                <div className="flex items-center gap-3 mb-1">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Mail className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{account.email}</span>
+        <TooltipProvider>
+            <Card className="h-full flex flex-col relative overflow-hidden shadow-xl border-white/5 bg-zinc-900 transition-all duration-300 hover:border-white/10 group">
+                 {/* Background Decoration */}
+                 <div className="absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent pointer-events-none" />
+                 
+                <CardHeader className="relative z-10 pb-2 pt-6 px-6 border-b border-white/5">
+                    <div className="flex flex-row items-center justify-between">
+                         <CardTitle className="text-sm font-medium flex items-center gap-2 text-zinc-400 uppercase tracking-wider">
+                            <Zap className="w-4 h-4 text-amber-500" />
+                            {t('dashboard.current_account')}
+                         </CardTitle>
+                         <div className="flex-shrink-0 scale-90 origin-right">
+                            {getTierBadge()}
+                         </div>
                     </div>
-                    {/* 订阅类型 */}
-                    {account.quota?.subscription_tier && (() => {
-                        const tier = account.quota.subscription_tier.toLowerCase();
-                        if (tier.includes('ultra')) {
-                            return (
-                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] font-bold shadow-sm shrink-0">
-                                    <Gem className="w-2.5 h-2.5 fill-current" />
-                                    ULTRA
-                                </span>
-                            );
-                        } else if (tier.includes('pro')) {
-                            return (
-                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold shadow-sm shrink-0">
-                                    <Diamond className="w-2.5 h-2.5 fill-current" />
-                                    PRO
-                                </span>
-                            );
-                        } else {
-                            return (
-                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 text-[10px] font-bold shadow-sm border border-gray-200 dark:border-white/10 shrink-0">
-                                    <Circle className="w-2.5 h-2.5" />
-                                    FREE
-                                </span>
-                            );
-                        }
-                    })()}
-                </div>
+                </CardHeader>
 
-                {/* Gemini Pro 配额 */}
-                {geminiProModel && (
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-baseline">
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Gemini 3 Pro</span>
+                <CardContent className="relative z-10 space-y-6 flex-1 pt-6 px-6">
+                    {/* User Info Block */}
+                    <div className="flex items-center gap-4 group/email">
+                        <div className="p-3 bg-white/5 rounded-xl border border-white/5 group-hover/email:border-white/10 transition-colors">
+                            <Mail className="w-5 h-5 text-zinc-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-0.5">Account ID</div>
                             <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-gray-400 dark:text-gray-500" title={`${t('accounts.reset_time')}: ${new Date(geminiProModel.reset_time).toLocaleString()}`}>
-                                    {geminiProModel.reset_time ? `R: ${formatTimeRemaining(geminiProModel.reset_time)}` : t('common.unknown')}
-                                </span>
-                                <span className={`text-xs font-bold ${geminiProModel.percentage >= 50 ? 'text-emerald-600 dark:text-emerald-400' :
-                                    geminiProModel.percentage >= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                    }`}>
-                                    {geminiProModel.percentage}%
-                                </span>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="text-lg font-bold text-zinc-100 truncate font-mono tracking-tight">
+                                            {truncateEmail(account.email)}
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="bg-zinc-950 border-zinc-800 text-zinc-300">
+                                        <p>{account.email}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                                
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6 text-zinc-500 hover:text-zinc-200 hover:bg-white/5 rounded-md transition-all opacity-0 group-hover/email:opacity-100"
+                                    onClick={copyToClipboard}
+                                >
+                                    {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                                </Button>
                             </div>
                         </div>
-                        <div className="w-full bg-gray-100 dark:bg-base-300 rounded-full h-1.5 overflow-hidden">
-                            <div
-                                className={`h-full rounded-full transition-all duration-700 ${geminiProModel.percentage >= 50 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' :
-                                    geminiProModel.percentage >= 20 ? 'bg-gradient-to-r from-amber-400 to-amber-500' :
-                                        'bg-gradient-to-r from-rose-400 to-rose-500'
-                                    }`}
-                                style={{ width: `${geminiProModel.percentage}%` }}
-                            ></div>
-                        </div>
                     </div>
-                )}
 
-                {/* Gemini Flash 配额 */}
-                {geminiFlashModel && (
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-baseline">
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Gemini 3 Flash</span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-gray-400 dark:text-gray-500" title={`${t('accounts.reset_time')}: ${new Date(geminiFlashModel.reset_time).toLocaleString()}`}>
-                                    {geminiFlashModel.reset_time ? `R: ${formatTimeRemaining(geminiFlashModel.reset_time)}` : t('common.unknown')}
-                                </span>
-                                <span className={`text-xs font-bold ${geminiFlashModel.percentage >= 50 ? 'text-emerald-600 dark:text-emerald-400' :
-                                    geminiFlashModel.percentage >= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                    }`}>
-                                    {geminiFlashModel.percentage}%
-                                </span>
+                    <div className="space-y-5">
+                        {/* Compact Quota Grid */}
+                        {geminiProModel && (
+                            <div className="space-y-2">
+                                 <div className="flex justify-between items-end">
+                                    <span className="text-xs font-medium text-zinc-400">Gemini 3 Pro</span>
+                                    <span className={cn("text-sm font-bold", geminiProModel.percentage >= 50 ? "text-emerald-400" : "text-amber-500")}>
+                                        {geminiProModel.percentage}%
+                                    </span>
+                                </div>
+                                <Progress 
+                                    value={geminiProModel.percentage} 
+                                    className="h-2 bg-zinc-800 rounded-full" 
+                                    indicatorClassName={cn(
+                                        "rounded-full bg-gradient-to-r", 
+                                        geminiProModel.percentage >= 50 ? "from-emerald-600 to-emerald-400" : "from-orange-600 to-orange-400"
+                                    )} 
+                                />
                             </div>
-                        </div>
-                        <div className="w-full bg-gray-100 dark:bg-base-300 rounded-full h-1.5 overflow-hidden">
-                            <div
-                                className={`h-full rounded-full transition-all duration-700 ${geminiFlashModel.percentage >= 50 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' :
-                                    geminiFlashModel.percentage >= 20 ? 'bg-gradient-to-r from-amber-400 to-amber-500' :
-                                        'bg-gradient-to-r from-rose-400 to-rose-500'
-                                    }`}
-                                style={{ width: `${geminiFlashModel.percentage}%` }}
-                            ></div>
-                        </div>
-                    </div>
-                )}
+                        )}
 
-                {/* Claude 配额 */}
-                {claudeModel && (
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-baseline">
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Claude 4.5</span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-gray-400 dark:text-gray-500" title={`${t('accounts.reset_time')}: ${new Date(claudeModel.reset_time).toLocaleString()}`}>
-                                    {claudeModel.reset_time ? `R: ${formatTimeRemaining(claudeModel.reset_time)}` : t('common.unknown')}
-                                </span>
-                                <span className={`text-xs font-bold ${claudeModel.percentage >= 50 ? 'text-cyan-600 dark:text-cyan-400' :
-                                    claudeModel.percentage >= 20 ? 'text-orange-600 dark:text-orange-400' : 'text-rose-600 dark:text-rose-400'
-                                    }`}>
-                                    {claudeModel.percentage}%
-                                </span>
+                        {claudeModel && (
+                            <div className="space-y-2">
+                                 <div className="flex justify-between items-end">
+                                    <span className="text-xs font-medium text-zinc-400">Claude 4.5</span>
+                                    <span className={cn("text-sm font-bold", claudeModel.percentage >= 50 ? "text-cyan-400" : "text-amber-500")}>
+                                        {claudeModel.percentage}%
+                                    </span>
+                                </div>
+                                <Progress 
+                                    value={claudeModel.percentage} 
+                                    className="h-2 bg-zinc-800 rounded-full" 
+                                    indicatorClassName={cn(
+                                        "rounded-full bg-gradient-to-r",
+                                        claudeModel.percentage >= 50 ? "from-cyan-600 to-cyan-400" : "from-orange-600 to-orange-400"
+                                    )}
+                                />
                             </div>
-                        </div>
-                        <div className="w-full bg-gray-100 dark:bg-base-300 rounded-full h-1.5 overflow-hidden">
-                            <div
-                                className={`h-full rounded-full transition-all duration-700 ${claudeModel.percentage >= 50 ? 'bg-gradient-to-r from-cyan-400 to-cyan-500' :
-                                    claudeModel.percentage >= 20 ? 'bg-gradient-to-r from-orange-400 to-orange-500' :
-                                        'bg-gradient-to-r from-rose-400 to-rose-500'
-                                    }`}
-                                style={{ width: `${claudeModel.percentage}%` }}
-                            ></div>
-                        </div>
-                    </div>
-                )}
-            </div>
+                        )}
 
-            {onSwitch && (
-                <div className="mt-auto pt-3">
-                    <button
-                        className="w-full px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-base-300 rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors"
-                        onClick={onSwitch}
-                    >
-                        {t('dashboard.switch_account')}
-                    </button>
-                </div>
-            )}
-        </div>
+                        {geminiFlashModel && (
+                             <div className="space-y-2">
+                                 <div className="flex justify-between items-end">
+                                    <span className="text-xs font-medium text-zinc-400">Gemini 3 Flash</span>
+                                    <span className={cn("text-sm font-bold", geminiFlashModel.percentage >= 50 ? "text-amber-400" : "text-amber-500")}>
+                                        {geminiFlashModel.percentage}%
+                                    </span>
+                                </div>
+                                <Progress 
+                                    value={geminiFlashModel.percentage} 
+                                    className="h-2 bg-zinc-800 rounded-full" 
+                                    indicatorClassName={cn(
+                                        "rounded-full bg-gradient-to-r",
+                                        geminiFlashModel.percentage >= 50 ? "from-amber-600 to-amber-400" : "from-orange-600 to-orange-400"
+                                    )}
+                                />
+                            </div>
+                        )}
+                    </div>
+                </CardContent>
+
+                {onSwitch && (
+                    <CardFooter className="pt-4 pb-6 px-6 bg-white/[0.02] border-t border-white/5">
+                        <Button 
+                            variant="outline" 
+                            size="default"
+                            className="w-full h-10 font-semibold border-zinc-700 bg-transparent hover:bg-zinc-800 text-zinc-300 hover:text-white transition-all active:scale-[0.98]" 
+                            onClick={onSwitch}
+                        >
+                            {t('dashboard.switch_account')}
+                        </Button>
+                    </CardFooter>
+                )}
+            </Card>
+        </TooltipProvider>
     );
-}
+};
 
-export default CurrentAccount;
+export default memo(CurrentAccount);

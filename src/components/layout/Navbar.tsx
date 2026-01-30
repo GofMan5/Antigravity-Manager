@@ -1,38 +1,43 @@
-import { useState, useRef, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Sun, Moon } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { 
+  LayoutDashboard, 
+  Users, 
+  Globe, 
+  Activity, 
+  Settings, 
+  Sun, 
+  Moon,
+  Zap
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '../../stores/useConfigStore';
+import { isLinux } from '../../utils/env';
+import { memo, useCallback } from 'react';
+import { LanguageSelector } from './navbar/LanguageSelector';
+import { cn } from '../../lib/utils';
 
-import { isTauri, isLinux } from '../../utils/env';
-
-function Navbar() {
+const Navbar = function Navbar() {
     const location = useLocation();
+    const navigate = useNavigate();
     const { t } = useTranslation();
     const { config, saveConfig } = useConfigStore();
 
     const navItems = [
-        { path: '/', label: t('nav.dashboard') },
-        { path: '/accounts', label: t('nav.accounts') },
-        { path: '/api-proxy', label: t('nav.proxy') },
-        { path: '/monitor', label: t('nav.call_records') },
-        { path: '/token-stats', label: t('nav.token_stats', 'Token 统计') },
-        { path: '/settings', label: t('nav.settings') },
+        { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard },
+        { path: '/accounts', label: t('nav.accounts'), icon: Users },
+        { path: '/api-proxy', label: t('nav.proxy'), icon: Globe },
+        { path: '/monitor', label: t('nav.call_records'), icon: Activity },
+        { path: '/token-stats', label: t('nav.token_stats', 'Token Stats'), icon: Zap },
+        { path: '/settings', label: t('nav.settings'), icon: Settings },
     ];
 
-    const isActive = (path: string) => {
-        if (path === '/') {
-            return location.pathname === '/';
-        }
-        return location.pathname.startsWith(path);
-    };
-
-    const toggleTheme = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    const toggleTheme = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
         if (!config) return;
 
         const newTheme = config.theme === 'light' ? 'dark' : 'light';
 
-        // Use View Transition API if supported, but skip on Linux (may cause crash)
+        // View Transition API for smooth theme switch
         if ('startViewTransition' in document && !isLinux()) {
             const x = event.clientX;
             const y = event.clientY;
@@ -43,13 +48,7 @@ function Navbar() {
 
             // @ts-ignore
             const transition = document.startViewTransition(async () => {
-                // Just let the state change trigger the transition
-                // No need to await the IPC call inside the transition block
-                saveConfig({
-                    ...config,
-                    theme: newTheme,
-                    language: config.language
-                }, true);
+                await saveConfig({ ...config, theme: newTheme }, true);
             });
 
             transition.ready.then(() => {
@@ -59,9 +58,7 @@ function Navbar() {
                     : [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`];
 
                 document.documentElement.animate(
-                    {
-                        clipPath: clipPath
-                    },
+                    { clipPath },
                     {
                         duration: 500,
                         easing: 'ease-in-out',
@@ -71,150 +68,95 @@ function Navbar() {
                 );
             });
         } else {
-            // Fallback: direct switch (Linux or browsers without View Transition)
-            await saveConfig({
-                ...config,
-                theme: newTheme,
-                language: config.language
-            }, true);
+            await saveConfig({ ...config, theme: newTheme }, true);
         }
-    };
+    }, [config, saveConfig]);
 
-    const [isLangOpen, setIsLangOpen] = useState(false);
-    const langMenuRef = useRef<HTMLDivElement>(null);
-
-    // Close language menu when clicking outside
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (langMenuRef.current && !langMenuRef.current.contains(event.target as Node)) {
-                setIsLangOpen(false);
-            }
-        }
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, []);
-
-    const languages = [
-        { code: 'zh', label: '简体中文', short: 'ZH' },
-        { code: 'zh-TW', label: '繁體中文', short: 'TW' },
-        { code: 'en', label: 'English', short: 'EN' },
-        { code: 'ja', label: '日本語', short: 'JA' },
-        { code: 'tr', label: 'Türkçe', short: 'TR' },
-        { code: 'vi', label: 'Tiếng Việt', short: 'VI' },
-        { code: 'pt', label: 'Português', short: 'PT' },
-        { code: 'ko', label: '한국어', short: 'KO' },
-        { code: 'ru', label: 'Русский', short: 'RU' },
-        { code: 'ar', label: 'العربية', short: 'AR' },
-    ];
-
-    const handleLanguageChange = async (langCode: string) => {
-        if (!config) return;
-
-        await saveConfig({
-            ...config,
-            language: langCode,
-            theme: config.theme
-        }, true);
-        setIsLangOpen(false);
-    };
+    const isActive = useCallback((path: string) => {
+        if (path === '/') return location.pathname === '/';
+        return location.pathname.startsWith(path);
+    }, [location.pathname]);
 
     return (
-        <nav
-            style={{ position: 'sticky', top: 0, zIndex: 50 }}
-            className="pt-9 transition-all duration-200 bg-[#FAFBFC] dark:bg-base-300"
+        <header 
+            className="fixed top-0 left-0 right-0 z-[999] border-b border-zinc-200/60 dark:border-zinc-800/60 bg-white/60 dark:bg-black/60 backdrop-blur-xl supports-[backdrop-filter]:bg-white/30 dark:supports-[backdrop-filter]:bg-black/30"
+            data-tauri-drag-region
         >
-            {/* 窗口拖拽区域 2 - 覆盖导航栏内容区域（在交互元素下方） */}
-            {isTauri() && (
-                <div
-                    className="absolute top-9 left-0 right-0 h-16"
-                    style={{ zIndex: 5, backgroundColor: 'rgba(0,0,0,0.001)' }}
-                    data-tauri-drag-region
-                />
-            )}
-
-            <div className="max-w-7xl mx-auto px-8 relative" style={{ zIndex: 10 }}>
-                <div className="flex items-center justify-between h-16">
-                    {/* Logo - 左侧 */}
-                    <div className="flex items-center">
-                        <Link to="/" className="text-xl font-semibold text-gray-900 dark:text-base-content flex items-center gap-2">
-                            Antigravity Tools
-                        </Link>
+            <div className="container mx-auto px-4 h-16 flex items-center justify-between" data-tauri-drag-region>
+                
+                {/* 1. LOGO SECTION */}
+                <Link to="/" className="flex items-center gap-2" data-tauri-drag-region>
+                    <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-[0_0_15px_rgba(79,70,229,0.5)]">
+                        <span className="font-bold text-white text-lg">A</span>
                     </div>
+                    <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-zinc-900 to-zinc-500 dark:from-white dark:to-zinc-400">
+                        Antigravity
+                    </span>
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                        v2.4
+                    </span>
+                </Link>
 
-                    {/* 药丸形状的导航标签 - 居中 */}
-                    <div className="flex items-center gap-1 bg-gray-100 dark:bg-base-200 rounded-full p-1">
-                        {navItems.map((item) => (
-                            <Link
-                                key={item.path}
-                                to={item.path}
-                                className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${isActive(item.path)
-                                    ? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
-                                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-base-content dark:hover:bg-base-100'
-                                    }`}
-                            >
-                                {item.label}
-                            </Link>
-                        ))}
-                    </div>
-
-                    {/* 右侧快捷设置按钮 */}
-                    <div className="flex items-center gap-2">
-                        {/* 主题切换按钮 */}
-                        <button
-                            onClick={toggleTheme}
-                            className="w-10 h-10 rounded-full bg-gray-100 dark:bg-base-200 hover:bg-gray-200 dark:hover:bg-base-100 flex items-center justify-center transition-colors"
-                            title={config?.theme === 'light' ? t('nav.theme_to_dark') : t('nav.theme_to_light')}
-                        >
-                            {config?.theme === 'light' ? (
-                                <Moon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-                            ) : (
-                                <Sun className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-                            )}
-                        </button>
-
-                        {/* 语言切换下拉菜单 */}
-                        <div className="relative" ref={langMenuRef}>
+                {/* 2. NAVIGATION (CENTER) */}
+                <nav className="hidden md:flex items-center gap-1" data-tauri-drag-region>
+                    {navItems.map((item) => {
+                        const active = isActive(item.path);
+                        return (
                             <button
-                                onClick={() => setIsLangOpen(!isLangOpen)}
-                                className="w-10 h-10 rounded-full bg-gray-100 dark:bg-base-200 hover:bg-gray-200 dark:hover:bg-base-100 flex items-center justify-center transition-colors"
-                                title={t('settings.general.language')}
+                                key={item.path}
+                                onClick={() => navigate(item.path)}
+                                className={cn(
+                                    "relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 z-10",
+                                    active
+                                        ? "text-zinc-900 dark:text-white"
+                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                                )}
                             >
-                                <span className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                                    {languages.find(l => l.code === config?.language)?.short || 'EN'}
-                                </span>
+                                {active && (
+                                    <motion.span
+                                        layoutId="navbar-active"
+                                        className="absolute inset-0 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/50 shadow-sm -z-10"
+                                        transition={{
+                                            type: "spring",
+                                            stiffness: 500,
+                                            damping: 30,
+                                        }}
+                                    />
+                                )}
+                                <item.icon className={cn("h-4 w-4 relative z-20", active ? "text-indigo-500 dark:text-indigo-400" : "opacity-70")} />
+                                <span className={cn("relative z-20", active ? "opacity-100" : "opacity-90")}>{item.label}</span>
                             </button>
+                        );
+                    })}
+                </nav>
 
-                            {/* 下拉菜单 */}
-                            {isLangOpen && (
-                                <div className="absolute ltr:right-0 rtl:left-0 mt-2 w-32 bg-white dark:bg-base-200 rounded-xl shadow-lg border border-gray-100 dark:border-base-100 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-200 ltr:origin-top-right rtl:origin-top-left">
-                                    {languages.map((lang) => (
-                                        <button
-                                            key={lang.code}
-                                            onClick={() => handleLanguageChange(lang.code)}
-                                            className={`w-full px-4 py-2 text-left text-sm flex items-center justify-between hover:bg-gray-50 dark:hover:bg-base-100 transition-colors ${config?.language === lang.code
-                                                ? 'text-blue-500 font-medium bg-blue-50 dark:bg-blue-900/10'
-                                                : 'text-gray-700 dark:text-gray-300'
-                                                }`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <span className="font-mono font-bold w-6">{lang.short}</span>
-                                                <span className="text-xs opacity-70">{lang.label}</span>
-                                            </div>
-                                            {config?.language === lang.code && (
-                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                            )}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
+                {/* 3. ACTIONS (RIGHT) */}
+                <div className="flex items-center gap-3" data-tauri-drag-region>
+                    {/* Status Indicator */}
+                    <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-500">System Stable</span>
                     </div>
+
+                    <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" /> {/* Divider */}
+
+                    <LanguageSelector />
+
+                    <button 
+                        onClick={toggleTheme}
+                        className="p-2 rounded-md text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                        title={config?.theme === 'light' ? t('nav.theme_to_dark') : t('nav.theme_to_light')}
+                    >
+                        {config?.theme === 'light' ? (
+                            <Moon className="h-4 w-4" />
+                        ) : (
+                            <Sun className="h-4 w-4" />
+                        )}
+                    </button>
                 </div>
             </div>
-        </nav>
+        </header>
     );
-}
+};
 
-export default Navbar;
+export default memo(Navbar);

@@ -1,7 +1,9 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Check } from 'lucide-react';
+import { Sparkles, Check, Activity, Zap } from 'lucide-react';
 import { ScheduledWarmupConfig } from '../../types/config';
+import { cn } from '../../lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface SmartWarmupProps {
     config: ScheduledWarmupConfig;
@@ -20,7 +22,6 @@ const SmartWarmup: React.FC<SmartWarmupProps> = ({ config, onChange }) => {
 
     const handleEnabledChange = (enabled: boolean) => {
         let newConfig = { ...config, enabled };
-        // 如果开启预热且勾选列表为空，则默认勾选所有核心模型
         if (enabled && (!config.monitored_models || config.monitored_models.length === 0)) {
             newConfig.monitored_models = warmupModelsOptions.map(o => o.id);
         }
@@ -32,7 +33,6 @@ const SmartWarmup: React.FC<SmartWarmupProps> = ({ config, onChange }) => {
         let newModels: string[];
 
         if (currentModels.includes(model)) {
-            // 必须勾选其中一个，不能全取消
             if (currentModels.length <= 1) return;
             newModels = currentModels.filter(m => m !== model);
         } else {
@@ -43,76 +43,108 @@ const SmartWarmup: React.FC<SmartWarmupProps> = ({ config, onChange }) => {
     };
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${config.enabled
-                        ? 'bg-orange-500 text-white'
-                        : 'bg-orange-50 dark:bg-orange-900/20 text-orange-500'
-                        }`}>
-                        <Sparkles size={20} />
+                    <div className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-500",
+                        config.enabled 
+                            ? "bg-amber-500/20 text-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.2)]" 
+                            : "bg-zinc-900 border border-white/5 text-zinc-500"
+                    )}>
+                        <Sparkles size={24} className="transition-all duration-300" />
                     </div>
                     <div>
-                        <div className="font-bold text-gray-900 dark:text-gray-100">
-                            {t('settings.warmup.title', '智能预热')}
+                        <div className="font-bold text-lg text-white">
+                            {t('settings.warmup.title')}
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        <p className="text-sm text-zinc-400 mt-0.5">
                             {t('settings.warmup.desc')}
                         </p>
                     </div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                        type="checkbox"
-                        className="sr-only peer"
-                        checked={config.enabled}
-                        onChange={(e) => handleEnabledChange(e.target.checked)}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500 shadow-inner"></div>
-                </label>
+
+                {/* Custom Toggle Switch */}
+                <button
+                    onClick={() => handleEnabledChange(!config.enabled)}
+                    className={cn(
+                        "relative w-14 h-8 rounded-full transition-all duration-300 ease-out focus:outline-none focus:ring-2 focus:ring-amber-500/50",
+                        config.enabled ? "bg-amber-600 shadow-[0_0_20px_rgba(217,119,6,0.4)]" : "bg-zinc-800 border border-white/5"
+                    )}
+                >
+                    <motion.div
+                        initial={false}
+                        animate={{ x: config.enabled ? 26 : 4 }}
+                        className={cn(
+                            "absolute top-1 left-0 w-6 h-6 rounded-full shadow-md flex items-center justify-center transition-colors duration-300",
+                            config.enabled ? "bg-white" : "bg-zinc-500"
+                        )}
+                    >
+                        {config.enabled && <Zap size={14} className="text-amber-600 fill-amber-600" />}
+                    </motion.div>
+                </button>
             </div>
 
-            {config.enabled && (
-                <div className="mt-4 pt-4 border-t border-gray-50 dark:border-base-300 animate-in slide-in-from-top-2 duration-300">
-                    <div className="space-y-3">
-                        <div>
-                            <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest block mb-2">
-                                {t('settings.quota_protection.monitored_models_label', '监控模型')}
+            <AnimatePresence>
+                {config.enabled && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0, y: -10 }}
+                        animate={{ opacity: 1, height: "auto", y: 0 }}
+                        exit={{ opacity: 0, height: 0, y: -10 }}
+                        transition={{ duration: 0.3 }}
+                        className="space-y-4 overflow-hidden pt-2"
+                    >
+                        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-white/5 backdrop-blur-md">
+                            <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-4 pl-1">
+                                {t('settings.quota_protection.monitored_models_label')}
                             </label>
-                            <div className="grid grid-cols-4 gap-2">
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {warmupModelsOptions.map((model) => {
                                     const isSelected = config.monitored_models?.includes(model.id);
                                     return (
-                                        <div
+                                        <motion.button
                                             key={model.id}
+                                            whileHover={{ scale: 1.02 }}
+                                            whileTap={{ scale: 0.98 }}
                                             onClick={() => toggleModel(model.id)}
-                                            className={`
-                                                flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-all duration-200
-                                                ${isSelected
-                                                    ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-800/50 text-orange-700 dark:text-orange-400'
-                                                    : 'bg-gray-50/50 dark:bg-base-200/50 border-gray-100 dark:border-base-300/50 text-gray-500 hover:border-gray-200 dark:hover:border-base-300'}
-                                            `}
+                                            className={cn(
+                                                "relative flex items-center justify-between p-4 rounded-xl border text-left transition-all duration-300 group",
+                                                isSelected 
+                                                    ? "bg-amber-500/10 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]" 
+                                                    : "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700"
+                                            )}
                                         >
-                                            <span className="text-[11px] font-medium truncate pr-2">
+                                            <span className={cn(
+                                                "text-sm font-bold transition-colors",
+                                                isSelected ? "text-white" : "text-zinc-300 group-hover:text-white"
+                                            )}>
                                                 {model.label}
                                             </span>
-                                            <div className={`
-                                                w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300
-                                                ${isSelected ? 'bg-orange-500 text-white scale-100' : 'bg-gray-200 dark:bg-base-300 text-transparent scale-75 opacity-0'}
-                                            `}>
-                                                <Check size={10} strokeWidth={4} />
+                                            
+                                            <div className={cn(
+                                                "w-5 h-5 rounded-full border flex items-center justify-center transition-all duration-300",
+                                                isSelected
+                                                    ? "bg-amber-500 border-amber-500 shadow-lg shadow-amber-500/40 transform scale-100"
+                                                    : "bg-transparent border-zinc-600 scale-100 group-hover:border-zinc-500"
+                                            )}>
+                                                {isSelected && <Check size={12} className="text-white stroke-[3px]" />}
                                             </div>
-                                        </div>
+                                        </motion.button>
                                     );
                                 })}
                             </div>
-                            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 leading-relaxed">
-                                {t('settings.quota_protection.monitored_models_desc', '勾选需要监控的模型。当选中的任一模型利用率跌破阈值时，将触发保护')}
-                            </p>
+
+                            <div className="mt-4 flex items-start gap-2 text-xs text-zinc-500 bg-black/20 p-3 rounded-lg border border-white/5">
+                                <Activity size={14} className="mt-0.5 text-amber-500 opacity-80" />
+                                <p className="leading-relaxed">
+                                    {t('settings.quota_protection.monitored_models_desc')}
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                </div>
-            )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

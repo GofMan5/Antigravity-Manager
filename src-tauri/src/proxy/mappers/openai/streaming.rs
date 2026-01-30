@@ -321,7 +321,9 @@ pub fn create_openai_sse_stream(
 
                                                 // [FIX] 将 usage 嵌入到 chunk 中
                                                 if let Some(ref usage) = final_usage {
-                                                    openai_chunk["usage"] = serde_json::to_value(usage).unwrap();
+                                                     if let Ok(val) = serde_json::to_value(usage) {
+                                                         openai_chunk["usage"] = val;
+                                                     }
                                                 }
 
                                                 // [FIX] 如果是最后一个 chunk,标记 usage 已发送
@@ -499,7 +501,9 @@ pub fn create_legacy_sse_stream(
 
                                     // [FIX] 将 usage 嵌入到 chunk 中
                                     if let Some(ref usage) = final_usage {
-                                        legacy_chunk["usage"] = serde_json::to_value(usage).unwrap();
+                                        if let Ok(val) = serde_json::to_value(usage) {
+                                            legacy_chunk["usage"] = val;
+                                        }
                                     }
 
                                     // [FIX] 如果是最后一个 chunk,标记 usage 已发送
@@ -603,7 +607,8 @@ pub fn create_codex_sse_stream(
                 "object": "response"
             }
         });
-        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&created_ev).unwrap())));
+        let created_json = serde_json::to_string(&created_ev).unwrap_or_else(|_| "{}".to_string());
+        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", created_json)));
 
         let mut full_content = String::new();
         let mut emitted_tool_calls = std::collections::HashSet::new();
@@ -751,14 +756,16 @@ pub fn create_codex_sse_stream(
                                                                 };
 
                                                                 if let Some(item_added_ev) = maybe_item_added_ev {
-                                                                    yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&item_added_ev).unwrap())));
+                                                                    let added_json = serde_json::to_string(&item_added_ev).unwrap_or_else(|_| "{}".to_string());
+                                                                    yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", added_json)));
 
                                                                     // Emit response.output_item.done
                                                                     let mut item_done_ev = item_added_ev.clone();
                                                                     if let Some(obj) = item_done_ev.as_object_mut() {
                                                                         obj.insert("type".to_string(), json!("response.output_item.done"));
                                                                     }
-                                                                    yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&item_done_ev).unwrap())));
+                                                                    let done_json = serde_json::to_string(&item_done_ev).unwrap_or_else(|_| "{}".to_string());
+                                                                    yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", done_json)));
                                                                 }
                                                             }
                                                         }
@@ -774,7 +781,8 @@ pub fn create_codex_sse_stream(
                                                 "type": "response.output_text.delta",
                                                 "delta": delta_text
                                             });
-                                            yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&delta_ev).unwrap())));
+                                            let delta_json = serde_json::to_string(&delta_ev).unwrap_or_else(|_| "{}".to_string());
+                                            yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", delta_json)));
                                         }
                                     }
                                 }
@@ -792,7 +800,8 @@ pub fn create_codex_sse_stream(
                                     "i18n_key": i18n_key
                                 }
                             });
-                            yield Ok(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&error_ev).unwrap())));
+                            let error_json = serde_json::to_string(&error_ev).unwrap_or_else(|_| "{}".to_string());
+                            yield Ok(Bytes::from(format!("data: {}\n\n", error_json)));
                             break;
                         }
                         None => {
@@ -817,7 +826,8 @@ pub fn create_codex_sse_stream(
                 ]
             }
         });
-        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&item_done_ev).unwrap())));
+        let item_done_json = serde_json::to_string(&item_done_ev).unwrap_or_else(|_| "{}".to_string());
+        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", item_done_json)));
 
         // 4. Emit response.completed
         let completed_ev = json!({
@@ -842,7 +852,8 @@ pub fn create_codex_sse_stream(
                 }))
             }
         });
-        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&completed_ev).unwrap())));
+        let completed_json = serde_json::to_string(&completed_ev).unwrap_or_else(|_| "{}".to_string());
+        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", completed_json)));
     };
 
     Box::pin(stream)

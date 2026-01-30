@@ -561,7 +561,7 @@ async fn silent_ok_handler() -> Response {
 async fn admin_list_accounts(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let accounts = state.account_service.list_accounts().map_err(|e| {
+    let accounts = state.account_service.list_accounts().await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse { error: e }),

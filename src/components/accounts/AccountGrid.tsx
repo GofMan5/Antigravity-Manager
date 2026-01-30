@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
+import { memo } from 'react';
 import { Account } from '../../types/account';
 import AccountCard from './AccountCard';
+import { motion } from 'framer-motion';
 
 interface AccountGridProps {
     accounts: Account[];
@@ -19,41 +21,61 @@ interface AccountGridProps {
     onWarmup?: (accountId: string) => void;
 }
 
+const container = {
+    hidden: { opacity: 0 },
+    show: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.05
+        }
+    }
+};
 
-function AccountGrid({ accounts, selectedIds, refreshingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy, onViewDevice, onWarmup }: AccountGridProps) {
+const item = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0 }
+};
+
+const AccountGrid = memo(({ accounts, selectedIds, refreshingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy, onViewDevice, onWarmup }: AccountGridProps) => {
     const { t } = useTranslation();
     if (accounts.length === 0) {
         return (
-            <div className="bg-white dark:bg-base-100 rounded-2xl p-12 shadow-sm border border-gray-100 dark:border-base-200 text-center">
-                <p className="text-gray-400 mb-2">{t('accounts.empty.title')}</p>
-                <p className="text-sm text-gray-400">{t('accounts.empty.desc')}</p>
+            <div className="flex flex-col items-center justify-center py-20 bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-2xl">
+                <p className="text-zinc-500 mb-2">{t('accounts.empty.title')}</p>
+                <p className="text-sm text-zinc-600">{t('accounts.empty.desc')}</p>
             </div>
         );
     }
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <motion.div 
+            variants={container}
+            initial="hidden"
+            animate="show"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4"
+        >
             {accounts.map((account) => (
-                <AccountCard
-                    key={account.id}
-                    account={account}
-                    selected={selectedIds.has(account.id)}
-                    isRefreshing={refreshingIds.has(account.id)}
-                    onSelect={() => onToggleSelect(account.id)}
-                    isCurrent={account.id === currentAccountId}
-                    isSwitching={account.id === switchingAccountId}
-                    onSwitch={() => onSwitch(account.id)}
-                    onRefresh={() => onRefresh(account.id)}
-                    onViewDevice={() => onViewDevice(account.id)}
-                    onViewDetails={() => onViewDetails(account.id)}
-                    onExport={() => onExport(account.id)}
-                    onDelete={() => onDelete(account.id)}
-                    onToggleProxy={() => onToggleProxy(account.id)}
-                    onWarmup={onWarmup ? () => onWarmup(account.id) : undefined}
-                />
+                <motion.div key={account.id} variants={item}>
+                    <AccountCard
+                        account={account}
+                        selected={selectedIds.has(account.id)}
+                        isRefreshing={refreshingIds.has(account.id)}
+                        onSelect={() => onToggleSelect(account.id)}
+                        isCurrent={account.id === currentAccountId}
+                        isSwitching={account.id === switchingAccountId}
+                        onSwitch={() => onSwitch(account.id)}
+                        onRefresh={() => onRefresh(account.id)}
+                        onViewDevice={() => onViewDevice(account.id)}
+                        onViewDetails={() => onViewDetails(account.id)}
+                        onExport={() => onExport(account.id)}
+                        onDelete={() => onDelete(account.id)}
+                        onToggleProxy={() => onToggleProxy(account.id)}
+                        onWarmup={onWarmup ? () => onWarmup(account.id) : undefined}
+                    />
+                </motion.div>
             ))}
-        </div>
+        </motion.div>
     );
-}
+});
 
 export default AccountGrid;

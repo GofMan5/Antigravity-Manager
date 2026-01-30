@@ -71,7 +71,7 @@ pub fn start_scheduler(app_handle: Option<tauri::AppHandle>, proxy_state: crate:
             }
             
             // Get all accounts (no longer filtering by level)
-            let Ok(accounts) = account::list_accounts() else {
+            let Ok(accounts) = account::list_accounts().await else {
                 continue;
             };
 

@@ -13,7 +13,7 @@ pub mod cloudflared;
 /// 列出所有账号
 #[tauri::command]
 pub async fn list_accounts() -> Result<Vec<Account>, String> {
-    modules::list_accounts()
+    modules::list_accounts().await
 }
 
 /// 添加账号
@@ -340,6 +340,8 @@ pub async fn save_config(
         instance.axum_server.update_debug_logging(&config.proxy).await;
         // 更新熔断配置
         instance.token_manager.update_circuit_breaker_config(config.circuit_breaker.clone()).await;
+        // [FIX] Update sticky scheduling config
+        instance.token_manager.update_sticky_config(config.proxy.scheduling.clone()).await;
         tracing::debug!("已同步热更新反代服务配置");
     }
 

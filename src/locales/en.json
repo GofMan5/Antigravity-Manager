@@ -69,12 +69,15 @@
         "refreshing": "Refreshing...",
         "total_accounts": "Total Accounts",
         "avg_gemini": "Avg. Gemini Quota",
+        "avg_gemini_desc": "All systems operational",
         "avg_gemini_image": "Avg. Gemini Image Quota",
         "avg_claude": "Avg. Claude Quota",
+        "avg_claude_desc": "Limits not reached",
         "low_quota_accounts": "Low Quota Accounts",
         "quota_sufficient": "Quota Sufficient",
         "quota_low": "Low Quota",
         "quota_desc": "Quota < 20%",
+        "attention_needed": "accounts need attention",
         "current_account": "Current Account",
         "switch_account": "Switch Account",
         "no_active_account": "No Active Account",
@@ -240,6 +243,8 @@
             "last_used": "Last Used",
             "actions": "Actions"
         },
+        "stats_active": "{{count}} ACCOUNTS ACTIVE",
+        "stats_premium": "{{count}} PREMIUM",
         "drag_to_reorder": "Drag to reorder",
         "empty": {
             "title": "No Accounts",
@@ -271,10 +276,20 @@
     },
     "settings": {
         "save": "Save Settings",
+        "system": "System Settings",
+        "security": {
+            "quota_protection": "Quota Protection",
+            "monitoring": "Resource Monitoring"
+        },
+        "performance": {
+            "smart_warmup": "Smart Warmup"
+        },
         "tabs": {
             "general": "General",
             "account": "Account",
-            "proxy": "Proxy Settings",
+            "proxy": "Proxy Network",
+            "security": "Security",
+            "performance": "Performance",
             "advanced": "Advanced",
             "about": "About"
         },
@@ -305,7 +320,8 @@
             "refresh_interval": "Refresh Interval (minutes)",
             "auto_sync": "Auto Sync Current Account",
             "auto_sync_desc": "Automatically sync current active account information periodically",
-            "sync_interval": "Sync Interval (seconds)"
+            "sync_interval": "Sync Interval (seconds)",
+            "sync_settings": "Synchronization Settings"
         },
         "warmup": {
             "title": "Smart Warmup",
@@ -327,10 +343,36 @@
             "desc": "Choose which model quotas to display in the account list. Unselected models are only shown in the detail popup."
         },
         "proxy": {
-            "title": "Proxy Settings"
+            "title": "Proxy Settings",
+            "scheduling": {
+                "title": "Account Rotation & Scheduling",
+                "subtitle": "Optimizes Prompt Caching and rate limit handling for all protocols (OpenAI/Gemini/Claude).",
+                "modes": {
+                    "Balance": "Balanced",
+                    "CacheFirst": "Cache First",
+                    "PerformanceFirst": "Performance",
+                    "Selected": "Selected Accounts"
+                },
+                "modes_desc": {
+                    "Balance": "Locks session, but switches immediately on rate limit. Balances stability and cache.",
+                    "CacheFirst": "Locks session to account. Waits on rate limit to maximize Context Caching hits.",
+                    "PerformanceFirst": "Pure Round-Robin rotation. Best load balancing, ignores session binding.",
+                    "Selected": "Load balances only among the manually selected list of accounts."
+                },
+                "max_wait": "Max Wait",
+                "max_wait_tooltip": "Seconds to wait on rate limit before switching accounts (Cache First only)",
+                "circuit_breaker": {
+                    "title": "Adaptive Circuit Breaker",
+                    "tooltip": "Automatically increases lockout duration for accounts that repeatedly fail with quota exhaustion.",
+                    "backoff_levels": "Backoff Levels (Seconds)",
+                    "level": "Lv {{level}}",
+                    "clear_records": "Clear Rate Limit Records"
+                }
+            }
         },
         "advanced": {
             "title": "Advanced Settings",
+            "paths": "Paths & Directories",
             "export_path": "Default Export Path",
             "export_path_placeholder": "Not set (Ask every time)",
             "default_export_path_desc": "Files will be saved directly to this folder without asking",
@@ -376,6 +418,7 @@
             "tech_stack": "Tech Stack",
             "author": "Author",
             "wechat": "WeChat",
+            "telegram": "Telegram",
             "github": "GitHub",
             "view_code": "View Code",
             "copyright": "Copyright © 2025-2026 Antigravity. All rights reserved.",
@@ -542,13 +585,15 @@
                 "mode_tooltip": "Cache-First: Bind session to account, wait on rate limit (maximize cache utility); Balance: Bind session, switch account on rate limit; Performance: Standard Round-robin.",
                 "modes": {
                     "CacheFirst": "Cache First",
-                    "Balance": "Balance",
-                    "PerformanceFirst": "Performance"
+                    "Balance": "Balanced",
+                    "PerformanceFirst": "Performance",
+                    "Selected": "Selected Accounts"
                 },
                 "modes_desc": {
-                    "CacheFirst": "Binds session to account, waits precisely if limited (Maximizes Prompt Cache hits).",
-                    "Balance": "Binds session, auto-switches to available account if limited (Balanced cache & availability).",
-                    "PerformanceFirst": "No session binding, pure round-robin rotation (Best for high concurrency)."
+                    "CacheFirst": "Locks session to account. Waits on rate limit to maximize Context Caching hits.",
+                    "Balance": "Locks session, but switches immediately on rate limit. Balances stability and cache.",
+                    "PerformanceFirst": "Pure Round-Robin rotation. Best load balancing, ignores session binding.",
+                    "Selected": "Load balances only among the manually selected list of accounts."
                 },
                 "max_wait": "Max Wait (sec)",
                 "max_wait_tooltip": "Only used in 'Cache First' mode: wait instead of switching if the rate limit reset time is below this value.",
@@ -649,10 +694,10 @@
         },
         "model": {
             "flash": "Fast Response",
+            "pro_legacy": "Gemini 2.5 Pro (Legacy)",
             "flash_preview": "Flash Preview",
-            "flash_lite": "Lite & Fast",
+            "flash_lite": "Low latency, high performance",
             "flash_thinking": "Thinking Capability",
-            "pro_legacy": "Legacy Pro",
             "pro_low": "High Performance",
             "pro_high": "Best Reasoning",
             "pro_image": "Image Generation (1:1)",
@@ -660,7 +705,11 @@
             "pro_image_9_16": "Image Generation (9:16)",
             "pro_image_4_3": "Image Generation (4:3)",
             "pro_image_3_4": "Image Generation (3:4)",
-            "pro_image_1_1": "Image Generation (1:1)",
+            "pro_image_1_1": "Optimized for 1:1 Image Generation",
+            "gpt4o": "OpenAI Flagship Multimodal Model",
+            "gpt4o_mini": "Cost-effective, high speed",
+            "o1_preview": "Advanced Reasoning (Preview)",
+            "o1_mini": "Fast Reasoning for Code",
             "claude_sonnet": "Code Reasoning",
             "claude_sonnet_thinking": "Chain of Thought",
             "claude_opus_thinking": "Strongest Thinking"

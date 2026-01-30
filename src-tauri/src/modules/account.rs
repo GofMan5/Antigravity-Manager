@@ -117,23 +117,48 @@ pub fn save_account(account: &Account) -> Result<(), String> {
         .map_err(|e| format!("failed_to_save_account_data: {}", e))
 }
 
-/// List all accounts
-pub fn list_accounts() -> Result<Vec<Account>, String> {
-    crate::modules::logger::log_info("Listing accounts...");
-    let index = load_account_index()?;
-    let mut accounts = Vec::new();
+/// Load account data (Async)
+pub async fn load_account_async(account_id: &str) -> Result<Account, String> {
+    let accounts_dir = get_accounts_dir()?;
+    let account_path = accounts_dir.join(format!("{}.json", account_id));
     
-    for summary in &index.accounts {
-        match load_account(&summary.id) {
-            Ok(account) => accounts.push(account),
-            Err(e) => {
-                crate::modules::logger::log_error(&format!("Failed to load account {}: {}", summary.id, e));
-                // [FIX #929] Removed auto-repair logic. 
-                // We no longer silently delete account IDs from the index if the file is missing.
-                // This prevents account loss during version upgrades or temporary FS issues.
-            },
-        }
+    // Check existence asynchronously or just let read fail? 
+    // tokio::fs::read_to_string handles "NotFound" usually, but let's be explicit if we want custom message.
+    if !account_path.exists() { // Sync check is fast enough for existence usually, but proper async is better.
+         return Err(format!("Account not found: {}", account_id));
     }
+    
+    let content = tokio::fs::read_to_string(&account_path).await
+        .map_err(|e| format!("failed_to_read_account_data: {}", e))?;
+    
+    serde_json::from_str(&content)
+        .map_err(|e| format!("failed_to_parse_account_data: {}", e))
+}
+
+/// List all accounts (Async + Parallel)
+pub async fn list_accounts() -> Result<Vec<Account>, String> {
+    crate::modules::logger::log_info("Listing accounts (Parallel Async)...");
+    let index = load_account_index()?;
+    
+    // Create futures for all accounts
+    let futures: Vec<_> = index.accounts.iter().map(|summary| {
+        let id = summary.id.clone();
+        async move {
+            match load_account_async(&id).await {
+                Ok(account) => Some(account),
+                Err(e) => {
+                    crate::modules::logger::log_error(&format!("Failed to load account {}: {}", id, e));
+                    None
+                }
+            }
+        }
+    }).collect();
+
+    // Run all futures concurrently
+    let results = futures::future::join_all(futures).await;
+    
+    // Collect valid results
+    let accounts: Vec<Account> = results.into_iter().flatten().collect();
     
     Ok(accounts)
 }
@@ -647,8 +672,8 @@ pub fn toggle_proxy_status(account_id: &str, enable: bool, reason: Option<&str>)
 
 /// Export all accounts' refresh_tokens
 #[allow(dead_code)]
-pub fn export_accounts() -> Result<Vec<(String, String)>, String> {
-    let accounts = list_accounts()?;
+pub async fn export_accounts() -> Result<Vec<(String, String)>, String> {
+    let accounts = list_accounts().await?;
     let mut exports = Vec::new();
     
     for account in accounts {
@@ -832,7 +857,7 @@ pub async fn refresh_all_quotas_logic() -> Result<RefreshStats, String> {
         "Starting batch refresh of all account quotas (Concurrent mode, max: {})",
         MAX_CONCURRENT
     ));
-    let accounts = list_accounts()?;
+    let accounts = list_accounts().await?;
 
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
 

@@ -11,11 +11,12 @@ import { copyToClipboard } from '../../utils/clipboard';
 
 interface AddAccountDialogProps {
     onAdd: (email: string, refreshToken: string) => Promise<void>;
+    children?: React.ReactNode;
 }
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
 
-function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
+function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
     const { t } = useTranslation();
     const fetchAccounts = useAccountStore(state => state.fetchAccounts);
     const [isOpen, setIsOpen] = useState(false);
@@ -457,16 +458,22 @@ function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
 
     return (
         <>
-            <button
-                className="px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-2 shadow-sm border border-gray-200/50 dark:border-base-300 relative z-[100]"
-                onClick={() => {
-                    console.log('AddAccountDialog button clicked');
-                    setIsOpen(true);
-                }}
-            >
-                <Plus className="w-4 h-4" />
-                {t('accounts.add_account')}
-            </button>
+            {children ? (
+                <div onClick={() => setIsOpen(true)} className="inline-block cursor-pointer">
+                    {children}
+                </div>
+            ) : (
+                <button
+                    className="px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-2 shadow-sm border border-gray-200/50 dark:border-base-300 relative z-[100]"
+                    onClick={() => {
+                        console.log('AddAccountDialog button clicked');
+                        setIsOpen(true);
+                    }}
+                >
+                    <Plus className="w-4 h-4" />
+                    {t('accounts.add_account')}
+                </button>
+            )}
 
             {isOpen && createPortal(
                 <div

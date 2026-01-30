@@ -9,6 +9,8 @@ pub enum SchedulingMode {
     Balance,
     /// 性能优先 (Performance-first): 纯轮询模式 (Round-robin)，账号负载最均衡，但不利用缓存
     PerformanceFirst,
+    /// 指定账号 (Selected): 仅在指定的账号列表中进行负载均衡 [NEW]
+    Selected,
 }
 
 impl Default for SchedulingMode {
@@ -25,6 +27,11 @@ pub struct StickySessionConfig {
     pub mode: SchedulingMode,
     /// 缓存优先模式下的最大等待时间 (秒)
     pub max_wait_seconds: u64,
+    /// 指定模式下使用的账号 ID 列表 [NEW]
+    pub selected_accounts: Vec<String>,
+    /// 指定模式下每个账号允许的模型列表 (AccountID -> [Model Names]) [NEW]
+    #[serde(default)]
+    pub selected_models: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl Default for StickySessionConfig {
@@ -32,6 +39,8 @@ impl Default for StickySessionConfig {
         Self {
             mode: SchedulingMode::Balance,
             max_wait_seconds: 60,
+            selected_accounts: Vec::new(),
+            selected_models: std::collections::HashMap::new(),
         }
     }
 }

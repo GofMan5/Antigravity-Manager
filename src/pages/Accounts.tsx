@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { save, open } from '@tauri-apps/plugin-dialog';
 import { request as invoke } from '../utils/request';
 import { join } from '@tauri-apps/api/path';
-import { Search, RefreshCw, Download, Upload, Trash2, LayoutGrid, List, ToggleLeft, ToggleRight, Sparkles } from 'lucide-react';
+import { Search, RefreshCw, Download, Upload, Trash2, LayoutGrid, List, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useAccountStore } from '../stores/useAccountStore';
 import { useConfigStore } from '../stores/useConfigStore';
 import AccountTable from '../components/accounts/AccountTable';
@@ -62,11 +63,11 @@ function Accounts() {
     const [isBatchDelete, setIsBatchDelete] = useState(false);
     const [toggleProxyConfirm, setToggleProxyConfirm] = useState<{ accountId: string; enable: boolean } | null>(null);
     const [isWarmupConfirmOpen, setIsWarmupConfirmOpen] = useState(false);
-    const [isWarmuping, setIsWarmuping] = useState(false);
+
     const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
 
 
-    const handleWarmup = async (accountId: string) => {
+    const handleWarmup = useCallback(async (accountId: string) => {
         setRefreshingIds(prev => {
             const next = new Set(prev);
             next.add(accountId);
@@ -84,11 +85,11 @@ function Accounts() {
                 return next;
             });
         }
-    };
+    }, [warmUpAccount, t]);
 
     const handleWarmupAll = async () => {
         setIsWarmupConfirmOpen(false);
-        setIsWarmuping(true);
+
         try {
             const isBatch = selectedIds.size > 0;
             if (isBatch) {
@@ -109,7 +110,7 @@ function Accounts() {
         } catch (error) {
             showToast(`${t('common.error')}: ${error}`, 'error');
         } finally {
-            setIsWarmuping(false);
+
             setRefreshingIds(new Set());
         }
     };
@@ -247,29 +248,33 @@ function Accounts() {
         setCurrentPage(1);
     }, [filter, searchQuery]);
 
-    const handleToggleSelect = (id: string) => {
-        const newSet = new Set(selectedIds);
-        if (newSet.has(id)) {
-            newSet.delete(id);
-        } else {
-            newSet.add(id);
-        }
-        setSelectedIds(newSet);
-    };
+    const handleToggleSelect = useCallback((id: string) => {
+        setSelectedIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) {
+                newSet.delete(id);
+            } else {
+                newSet.add(id);
+            }
+            return newSet;
+        });
+    }, []);
 
-    const handleToggleAll = () => {
+    const handleToggleAll = useCallback(() => {
         // 全选当前页的所有项
         const currentIds = paginatedAccounts.map(a => a.id);
-        const allSelected = currentIds.every(id => selectedIds.has(id));
-
-        const newSet = new Set(selectedIds);
-        if (allSelected) {
-            currentIds.forEach(id => newSet.delete(id));
-        } else {
-            currentIds.forEach(id => newSet.add(id));
-        }
-        setSelectedIds(newSet);
-    };
+        
+        setSelectedIds(prev => {
+            const allSelected = currentIds.every(id => prev.has(id));
+            const newSet = new Set(prev);
+            if (allSelected) {
+                currentIds.forEach(id => newSet.delete(id));
+            } else {
+                currentIds.forEach(id => newSet.add(id));
+            }
+            return newSet;
+        });
+    }, [paginatedAccounts]);
 
     const handleAddAccount = async (email: string, refreshToken: string) => {
         await addAccount(email, refreshToken);
@@ -277,7 +282,7 @@ function Accounts() {
 
     const [switchingAccountId, setSwitchingAccountId] = useState<string | null>(null);
 
-    const handleSwitch = async (accountId: string) => {
+    const handleSwitch = useCallback(async (accountId: string) => {
         if (loading || switchingAccountId) return;
 
         setSwitchingAccountId(accountId);
@@ -294,9 +299,9 @@ function Accounts() {
                 setSwitchingAccountId(null);
             }, 500);
         }
-    };
+    }, [loading, switchingAccountId, switchAccount, t]);
 
-    const handleRefresh = async (accountId: string) => {
+    const handleRefresh = useCallback(async (accountId: string) => {
         setRefreshingIds(prev => {
             const next = new Set(prev);
             next.add(accountId);
@@ -316,7 +321,7 @@ function Accounts() {
                 return next;
             });
         }
-    };
+    }, [refreshQuota, t]);
 
     const handleBatchDelete = () => {
         if (selectedIds.size === 0) return;
@@ -338,10 +343,10 @@ function Accounts() {
         }
     };
 
-    const handleDelete = (accountId: string) => {
+    const handleDelete = useCallback((accountId: string) => {
         console.log('[Accounts] Request to delete:', accountId);
         setDeleteConfirmId(accountId);
-    };
+    }, []);
 
     const executeDelete = async () => {
         if (!deleteConfirmId) return;
@@ -359,9 +364,9 @@ function Accounts() {
         }
     };
 
-    const handleToggleProxy = (accountId: string, currentlyDisabled: boolean) => {
+    const handleToggleProxy = useCallback((accountId: string, currentlyDisabled: boolean) => {
         setToggleProxyConfirm({ accountId, enable: currentlyDisabled });
-    };
+    }, []);
 
     const executeToggleProxy = async () => {
         if (!toggleProxyConfirm) return;
@@ -381,28 +386,9 @@ function Accounts() {
         }
     };
 
-    const handleBatchToggleProxy = async (enable: boolean) => {
-        if (selectedIds.size === 0) return;
 
-        try {
-            const promises = Array.from(selectedIds).map(id =>
-                toggleProxyStatus(id, enable, enable ? undefined : t('accounts.proxy_disabled_reason_batch'))
-            );
-            await Promise.all(promises);
-            showToast(
-                enable
-                    ? t('accounts.toast.proxy_enabled', { count: selectedIds.size })
-                    : t('accounts.toast.proxy_disabled', { count: selectedIds.size }),
-                'success'
-            );
-            setSelectedIds(new Set());
-        } catch (error) {
-            console.error('[Accounts] Batch toggle proxy status failed:', error);
-            showToast(`${t('common.error')}: ${error}`, 'error');
-        }
-    };
 
-    const [isRefreshing, setIsRefreshing] = useState(false);
+
     const [isRefreshConfirmOpen, setIsRefreshConfirmOpen] = useState(false);
 
     const handleRefreshClick = () => {
@@ -411,7 +397,7 @@ function Accounts() {
 
     const executeRefresh = async () => {
         setIsRefreshConfirmOpen(false);
-        setIsRefreshing(true);
+
         try {
             const isBatch = selectedIds.size > 0;
             let successCount = 0;
@@ -459,7 +445,7 @@ function Accounts() {
         } catch (error) {
             showToast(`${t('common.error')}: ${error}`, 'error');
         } finally {
-            setIsRefreshing(false);
+
             setRefreshingIds(new Set());
         }
     };
@@ -529,12 +515,26 @@ function Accounts() {
         exportAccountsToJson(accountsToExport);
     };
 
-    const handleExportOne = (accountId: string) => {
-        const account = accounts.find(a => a.id === accountId);
-        if (account) {
-            exportAccountsToJson([account]);
+    const handleExportOne = useCallback(async (accountId: string) => {
+        try {
+            const account = accounts.find(a => a.id === accountId);
+            if (!account) return;
+
+            // Assuming 'save' and 'invoke' are available in this scope (Tauri context)
+            // This new implementation exports the full account object, not just email/refresh_token
+            const path = await save({
+                filters: [{ name: 'JSON', extensions: ['json'] }],
+                defaultPath: `${account.email}_export.json`,
+            });
+            if (path) {
+                await invoke('save_text_file', { path, content: JSON.stringify(account, null, 2) });
+                showToast(t('common.success'), 'success');
+            }
+        } catch (error) {
+            console.error(error);
+            showToast(t('common.error'), 'error');
         }
-    };
+    }, [accounts, t]);
 
     const processImportData = async (content: string) => {
         let importData: Array<{ email?: string; refresh_token?: string }>;
@@ -622,18 +622,14 @@ function Accounts() {
         }
     };
 
-    const handleViewDetails = (accountId: string) => {
+    const handleViewDetails = useCallback((accountId: string) => {
         const account = accounts.find(a => a.id === accountId);
-        if (account) {
-            setDetailsAccount(account);
-        }
-    };
-    const handleViewDevice = (accountId: string) => {
+        if (account) setDetailsAccount(account);
+    }, [accounts]);
+    const handleViewDevice = useCallback((accountId: string) => {
         const account = accounts.find(a => a.id === accountId);
-        if (account) {
-            setDeviceAccount(account);
-        }
-    };
+        if (account) setDeviceAccount(account);
+    }, [accounts]);
 
 
     return (
@@ -647,261 +643,223 @@ function Accounts() {
                 onChange={handleFileChange}
             />
 
-            {/* 顶部工具栏：搜索、过滤和操作按钮 */}
-            <div className="flex-none flex items-center gap-2">
-                {/* 搜索框 */}
-                <div className="flex-none w-40 relative transition-all focus-within:w-48">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder={t('accounts.search_placeholder')}
-                        className="w-full pl-9 pr-4 py-2 bg-white dark:bg-base-100 text-sm text-gray-900 dark:text-base-content border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                </div>
+            {/* Top Toolbar: Glassmorphism Redesign */}
+            <div className="flex-none px-6 py-6 mb-6">
+                <div className="flex flex-col gap-6">
+                    {/* Title & Stats */}
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 tracking-tight">
+                                {t('nav.accounts')}
+                            </h1>
+                            <p className="text-zinc-500 mt-1 font-mono text-xs tracking-wide">
+                                {t('accounts.stats_active', { count: searchedAccounts.length })} • {t('accounts.stats_premium', { count: searchedAccounts.filter(a => a.quota?.subscription_tier?.toLowerCase().includes('pro') || a.quota?.subscription_tier?.toLowerCase().includes('ultra')).length })}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                             {/* Add Account Button - Prominent */}
+                             <AddAccountDialog onAdd={handleAddAccount}>
+                                <button className="group relative px-5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 active:scale-95 transition-all text-white font-medium shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] overflow-hidden">
+                                     <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+                                     <div className="relative flex items-center gap-2">
+                                        <div className="w-5 h-5 rounded-full border-2 border-white/30 flex items-center justify-center group-hover:border-white/50 transition-colors">
+                                            <span className="text-lg leading-none -mt-0.5">+</span>
+                                        </div>
+                                        <span>{t('accounts.add_account')}</span>
+                                     </div>
+                                </button>
+                             </AddAccountDialog>
+                        </div>
+                    </div>
 
-                {/* 视图切换按钮组 */}
-                <div className="flex gap-1 bg-gray-100 dark:bg-base-200 p-1 rounded-lg shrink-0">
-                    <button
-                        className={cn(
-                            "p-1.5 rounded-md transition-all",
-                            viewMode === 'list'
-                                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content"
-                        )}
-                        onClick={() => setViewMode('list')}
-                        title={t('accounts.views.list')}
-                    >
-                        <List className="w-4 h-4" />
-                    </button>
-                    <button
-                        className={cn(
-                            "p-1.5 rounded-md transition-all",
-                            viewMode === 'grid'
-                                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content"
-                        )}
-                        onClick={() => setViewMode('grid')}
-                        title={t('accounts.views.grid')}
-                    >
-                        <LayoutGrid className="w-4 h-4" />
-                    </button>
-                </div>
-
-                {/* 过滤按钮组 */}
-                <div className="flex gap-0.5 bg-gray-100/80 dark:bg-base-200 p-1 rounded-xl border border-gray-200/50 dark:border-white/5 overflow-x-auto no-scrollbar">
-                    <button
-                        className={cn(
-                            "px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0",
-                            filter === 'all'
-                                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
-                        )}
-                        onClick={() => setFilter('all')}
-                    >
-                        {t('accounts.all')}
-                        <span className={cn(
-                            "px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors",
-                            filter === 'all'
-                                ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                                : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                        )}>
-                            {filterCounts.all}
-                        </span>
-                    </button>
-
-                    <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 self-center mx-1 shrink-0"></div>
-
-                    <button
-                        className={cn(
-                            "px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0",
-                            filter === 'pro'
-                                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
-                        )}
-                        onClick={() => setFilter('pro')}
-                    >
-                        {t('accounts.pro')}
-                        <span className={cn(
-                            "px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors",
-                            filter === 'pro'
-                                ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                                : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                        )}>
-                            {filterCounts.pro}
-                        </span>
-                    </button>
-
-                    <button
-                        className={cn(
-                            "px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0",
-                            filter === 'ultra'
-                                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
-                        )}
-                        onClick={() => setFilter('ultra')}
-                    >
-                        {t('accounts.ultra')}
-                        <span className={cn(
-                            "px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors",
-                            filter === 'ultra'
-                                ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                                : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                        )}>
-                            {filterCounts.ultra}
-                        </span>
-                    </button>
-
-                    <button
-                        className={cn(
-                            "px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0",
-                            filter === 'free'
-                                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
-                        )}
-                        onClick={() => setFilter('free')}
-                    >
-                        {t('accounts.free')}
-                        <span className={cn(
-                            "px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors",
-                            filter === 'free'
-                                ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                                : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                        )}>
-                            {filterCounts.free}
-                        </span>
-                    </button>
-                </div>
-
-                <div className="flex-1 min-w-[8px]"></div>
-
-                {/* 操作按钮组 */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                    <AddAccountDialog onAdd={handleAddAccount} />
-
-                    {selectedIds.size > 0 && (
-                        <>
-                            <button
-                                className="px-2.5 py-2 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1.5 shadow-sm"
-                                onClick={handleBatchDelete}
-                                title={t('accounts.delete_selected', { count: selectedIds.size })}
-                            >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span className="hidden xl:inline">{t('accounts.delete_selected', { count: selectedIds.size })}</span>
-                            </button>
-                            <button
-                                className="px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-sm"
-                                onClick={() => handleBatchToggleProxy(false)}
-                                title={t('accounts.disable_proxy_selected', { count: selectedIds.size })}
-                            >
-                                <ToggleLeft className="w-3.5 h-3.5" />
-                                <span className="hidden xl:inline">{t('accounts.disable_proxy_selected', { count: selectedIds.size })}</span>
-                            </button>
-                            <button
-                                className="px-2.5 py-2 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1.5 shadow-sm"
-                                onClick={() => handleBatchToggleProxy(true)}
-                                title={t('accounts.enable_proxy_selected', { count: selectedIds.size })}
-                            >
-                                <ToggleRight className="w-3.5 h-3.5" />
-                                <span className="hidden xl:inline">{t('accounts.enable_proxy_selected', { count: selectedIds.size })}</span>
-                            </button>
-                        </>
-                    )}
-
-                    <button
-                        className={`px-2.5 py-2 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm ${isRefreshing ? 'opacity-70 cursor-not-allowed' : ''}`}
-                        onClick={handleRefreshClick}
-                        disabled={isRefreshing}
-                        title={selectedIds.size > 0 ? t('accounts.refresh_selected', { count: selectedIds.size }) : t('accounts.refresh_all')}
-                    >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                        <span className="hidden xl:inline">
-                            {isRefreshing ? t('common.loading') : (selectedIds.size > 0 ? t('accounts.refresh_selected', { count: selectedIds.size }) : t('accounts.refresh_all'))}
-                        </span>
-                    </button>
-
-                    <button
-                        className={`px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-sm ${isWarmuping ? 'opacity-70 cursor-not-allowed' : ''}`}
-                        onClick={() => setIsWarmupConfirmOpen(true)}
-                        disabled={isWarmuping}
-                        title={selectedIds.size > 0 ? t('accounts.warmup_selected', { count: selectedIds.size }) : t('accounts.warmup_all', '一键预热所有账号')}
-                    >
-                        <Sparkles className={`w-3.5 h-3.5 ${isWarmuping ? 'animate-pulse' : ''}`} />
-                        <span className="hidden xl:inline">
-                            {isWarmuping ? t('common.loading') : (selectedIds.size > 0 ? t('accounts.warmup_selected', { count: selectedIds.size }) : t('accounts.warmup_all', '一键预热'))}
-                        </span>
-                    </button>
-
-                    <button
-                        className="px-2.5 py-2 border border-gray-200 dark:border-base-300 text-gray-700 dark:text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-1.5"
-                        onClick={handleImportJson}
-                        title={t('accounts.import_json')}
-                    >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span className="hidden lg:inline">
-                            {t('accounts.import_json')}
-                        </span>
-                    </button>
-
-                    <button
-                        className="px-2.5 py-2 border border-gray-200 dark:border-base-300 text-gray-700 dark:text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-1.5"
-                        onClick={handleExport}
-                        title={selectedIds.size > 0 ? t('accounts.export_selected', { count: selectedIds.size }) : t('common.export')}
-                    >
-                        <Download className="w-3.5 h-3.5" />
-                        <span className="hidden lg:inline">
-                            {selectedIds.size > 0 ? t('accounts.export_selected', { count: selectedIds.size }) : t('common.export')}
-                        </span>
-                    </button>
                 </div>
             </div>
 
-            {/* 账号列表内容区域 */}
-            <div className="flex-1 min-h-0 relative" ref={containerRef}>
-                {viewMode === 'list' ? (
-                    <div className="h-full bg-white dark:bg-base-100 rounded-2xl shadow-sm border border-gray-100 dark:border-base-200 flex flex-col overflow-hidden">
-                        <div className="flex-1 overflow-y-auto">
-                            <AccountTable
-                                accounts={paginatedAccounts}
-                                selectedIds={selectedIds}
-                                refreshingIds={refreshingIds}
-                                onToggleSelect={handleToggleSelect}
-                                onToggleAll={handleToggleAll}
-                                currentAccountId={currentAccount?.id || null}
-                                switchingAccountId={switchingAccountId}
-                                onSwitch={handleSwitch}
-                                onRefresh={handleRefresh}
-                                onViewDevice={handleViewDevice}
-                                onViewDetails={handleViewDetails}
-                                onExport={handleExportOne}
-                                onDelete={handleDelete}
-                                onToggleProxy={(id) => handleToggleProxy(id, !!accounts.find(a => a.id === id)?.proxy_disabled)}
-                                onReorder={reorderAccounts}
-                                onWarmup={handleWarmup}
+            {/* Combined Card: Toolbar + Accounts List */}
+            <div className="flex-1 min-h-0 relative flex flex-col" ref={containerRef}>
+                <div className="h-full bg-white dark:bg-zinc-900/40 backdrop-blur-xl rounded-2xl border border-white/5 flex flex-col overflow-hidden shadow-2xl">
+                    
+                    {/* Toolbar Header */}
+                    <div className="flex-none flex items-center gap-2 lg:gap-4 p-3 border-b border-white/5 bg-white/5">
+                        {/* Search Input */}
+                        <div className="relative group min-w-[180px] lg:min-w-[280px]">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-indigo-400 transition-colors" />
+                            <input
+                                type="text"
+                                placeholder={t('accounts.search_placeholder')}
+                                className="w-full h-9 pl-10 pr-4 bg-zinc-900/50 border border-white/5 rounded-lg focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-800/50 transition-all text-xs placeholder:text-zinc-600 text-zinc-200"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
                             />
                         </div>
+
+                        {/* Divider */}
+                        <div className="w-px h-6 bg-white/5 my-auto shrink-0" />
+
+                        {/* Filter Tabs */}
+                        <div className="flex items-center bg-zinc-900/50 p-0.5 rounded-lg border border-white/5 shrink-0">
+                            {['all', 'pro', 'ultra', 'free'].map((type) => (
+                                <button
+                                    key={type}
+                                    onClick={() => setFilter(type as any)}
+                                    className={cn(
+                                        "relative px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all z-10",
+                                        filter === type ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                                    )}
+                                >
+                                    {filter === type && (
+                                        <motion.div
+                                            layoutId="activeFilter"
+                                            className="absolute inset-0 bg-zinc-700/80 rounded-md shadow-sm"
+                                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                            style={{ zIndex: -1 }}
+                                        />
+                                    )}
+                                    <span className="relative flex items-center gap-1.5">
+                                        <span className="hidden sm:inline">{type}</span>
+                                        <span className="sm:hidden">{type.charAt(0)}</span>
+                                        <span className={cn(
+                                            "px-1 py-0.5 rounded text-[8px]",
+                                            filter === type ? "bg-white/10 text-white" : "bg-zinc-800 text-zinc-600"
+                                        )}>
+                                            {filterCounts[type as keyof typeof filterCounts]}
+                                        </span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Spacer */}
+                        <div className="flex-1" />
+
+                        {/* Actions Group */}
+                        <div className="flex items-center gap-1">
+                             {/* View Toggle */}
+                            <div className="flex items-center bg-zinc-900/50 p-0.5 rounded-lg border border-white/5 mr-2">
+                                <button
+                                    onClick={() => setViewMode('list')}
+                                    className={cn(
+                                        "p-1.5 rounded-md transition-all",
+                                        viewMode === 'list' ? "bg-zinc-700 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                                    )}
+                                    title={t('accounts.list_view')}
+                                >
+                                    <List className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('grid')}
+                                    className={cn(
+                                        "p-1.5 rounded-md transition-all",
+                                        viewMode === 'grid' ? "bg-zinc-700 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                                    )}
+                                    title={t('accounts.grid_view')}
+                                >
+                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+
+                            {selectedIds.size > 0 ? (
+                                <>
+                                    <button 
+                                        onClick={handleExport}
+                                        className="h-8 px-3 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 hover:border-indigo-500/40 transition-all flex items-center gap-2"
+                                    >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span className="text-[10px] font-bold">EXP ({selectedIds.size})</span>
+                                    </button>
+                                    <button 
+                                        onClick={handleBatchDelete}
+                                        className="h-8 px-3 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 hover:border-rose-500/40 transition-all flex items-center gap-2"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span className="text-[10px] font-bold">DEL ({selectedIds.size})</span>
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <ActionIcon 
+                                        icon={RefreshCw} 
+                                        onClick={handleRefreshClick} 
+                                        label={t('common.refresh')} 
+                                        tooltip={t('accounts.refresh_all_tooltip')}
+                                        className="h-8 px-2 text-xs"
+                                        iconSize={14}
+                                    />
+                                    <ActionIcon 
+                                        icon={Sparkles} 
+                                        onClick={() => setIsWarmupConfirmOpen(true)} 
+                                        label={t('accounts.warmup_all')} 
+                                        tooltip="One-Click Warmup"
+                                        className="text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 h-8 px-2 text-xs"
+                                        iconSize={14}
+                                    />
+                                    <div className="w-px h-5 bg-white/5 mx-1" />
+                                    <ActionIcon 
+                                        icon={Upload} 
+                                        onClick={handleImportJson} 
+                                        label={t('common.import')} 
+                                        tooltip={t('accounts.import_tooltip')}
+                                        className="h-8 px-2 text-xs"
+                                        iconSize={14}
+                                    />
+                                    <ActionIcon 
+                                        icon={Download} 
+                                        onClick={handleExport} 
+                                        label={t('common.export')} 
+                                        tooltip={t('accounts.export_tooltip')}
+                                        className="h-8 px-2 text-xs"
+                                        iconSize={14}
+                                    />
+                                </>
+                            )}
+                        </div>
                     </div>
-                ) : (
-                    <div className="h-full overflow-y-auto">
-                        <AccountGrid
-                            accounts={paginatedAccounts}
-                            selectedIds={selectedIds}
-                            refreshingIds={refreshingIds}
-                            onToggleSelect={handleToggleSelect}
-                            currentAccountId={currentAccount?.id || null}
-                            switchingAccountId={switchingAccountId}
-                            onSwitch={handleSwitch}
-                            onRefresh={handleRefresh}
-                            onViewDevice={handleViewDevice}
-                            onViewDetails={handleViewDetails}
-                            onExport={handleExportOne}
-                            onDelete={handleDelete}
-                            onToggleProxy={(id) => handleToggleProxy(id, !!accounts.find(a => a.id === id)?.proxy_disabled)}
-                            onWarmup={handleWarmup}
-                        />
+
+                    {/* Content Area */}
+                    <div className="flex-1 min-h-0 overflow-y-auto p-0 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                        {viewMode === 'list' ? (
+                            <div className="p-2 space-y-1">
+                                <AccountTable
+                                    accounts={paginatedAccounts}
+                                    selectedIds={selectedIds}
+                                    refreshingIds={refreshingIds}
+                                    onToggleSelect={handleToggleSelect}
+                                    onToggleAll={handleToggleAll}
+                                    currentAccountId={currentAccount?.id || null}
+                                    switchingAccountId={switchingAccountId}
+                                    onSwitch={handleSwitch}
+                                    onRefresh={handleRefresh}
+                                    onViewDevice={handleViewDevice}
+                                    onViewDetails={handleViewDetails}
+                                    onExport={handleExportOne}
+                                    onDelete={handleDelete}
+                                    onToggleProxy={(id: string) => handleToggleProxy(id, !!accounts.find(a => a.id === id)?.proxy_disabled)}
+                                    onReorder={reorderAccounts}
+                                    onWarmup={handleWarmup}
+                                />
+                            </div>
+                        ) : (
+                            <div className="p-3">
+                                <AccountGrid
+                                    accounts={paginatedAccounts}
+                                    selectedIds={selectedIds}
+                                    refreshingIds={refreshingIds}
+                                    onToggleSelect={handleToggleSelect}
+                                    currentAccountId={currentAccount?.id || null}
+                                    switchingAccountId={switchingAccountId}
+                                    onSwitch={handleSwitch}
+                                    onRefresh={handleRefresh}
+                                    onViewDevice={handleViewDevice}
+                                    onViewDetails={handleViewDetails}
+                                    onExport={handleExportOne}
+                                    onDelete={handleDelete}
+                                    onToggleProxy={(id) => handleToggleProxy(id, !!accounts.find(a => a.id === id)?.proxy_disabled)}
+                                    onWarmup={handleWarmup}
+                                />
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
 
             {/* 极简分页 - 无边框浮动样式 */}
@@ -985,6 +943,24 @@ function Accounts() {
                 onCancel={() => setIsWarmupConfirmOpen(false)}
             />
         </div >
+    );
+}
+
+// Helper Component for Header Actions
+function ActionIcon({ icon: Icon, onClick, label, tooltip, className }: any) {
+    return (
+        <button
+            onClick={onClick}
+            title={tooltip}
+            className={cn(
+                "h-10 px-3 rounded-xl flex items-center gap-2 transition-all border border-transparent",
+                "text-zinc-400 hover:text-white hover:bg-zinc-800 hover:border-white/10",
+                className
+            )}
+        >
+            <Icon className="w-4 h-4" />
+            <span className="text-xs font-bold tracking-wide">{label}</span>
+        </button>
     );
 }
 

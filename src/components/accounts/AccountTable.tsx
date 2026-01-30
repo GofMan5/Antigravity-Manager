@@ -1,8 +1,4 @@
-/**
- * 账号表格组件
- * 支持拖拽排序功能，用户可以通过拖拽行来调整账号顺序
- */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, memo } from 'react';
 import {
     DndContext,
     closestCenter,
@@ -30,12 +26,6 @@ import {
     Download,
     Fingerprint,
     Info,
-    Lock,
-    Ban,
-    Diamond,
-    Gem,
-    Circle,
-    Clock,
     ToggleLeft,
     ToggleRight,
     Sparkles,
@@ -46,10 +36,23 @@ import { cn } from '../../utils/cn';
 import { getQuotaColor, formatTimeRemaining, getTimeRemainingColor } from '../../utils/format';
 import { useConfigStore } from '../../stores/useConfigStore';
 
-// ============================================================================
-// 类型定义
-// ============================================================================
+// ===================================
+// Helper - Model Label
+// ===================================
+function getModelLabel(id: string): string {
+    if (id.includes('gemini-3-pro')) return 'G3 PRO';
+    if (id.includes('gemini-3-flash')) return 'G3 FLASH';
+    if (id.includes('claude-sonnet')) return 'CLAUDE';
+    if (id.includes('gpt-4o')) return 'GPT-4o';
+    if (id.includes('o1-mini')) return 'O1 MINI';
+    if (id.includes('o1-preview')) return 'O1 PRE';
+    if (id.includes('pro-image')) return 'IMG';
+    return id.split('-').slice(1).join(' ').toUpperCase().substring(0, 8);
+}
 
+// ===================================
+// Types
+// ===================================
 interface AccountTableProps {
     accounts: Account[];
     selectedIds: Set<string>;
@@ -66,7 +69,6 @@ interface AccountTableProps {
     onDelete: (accountId: string) => void;
     onToggleProxy: (accountId: string) => void;
     onWarmup?: (accountId: string) => void;
-    /** 拖拽排序回调，当用户完成拖拽时触发 */
     onReorder?: (accountIds: string[]) => void;
 }
 
@@ -76,7 +78,7 @@ interface SortableRowProps {
     isRefreshing: boolean;
     isCurrent: boolean;
     isSwitching: boolean;
-    isDragging?: boolean;
+    // isDragging?: boolean; // Removed unused prop
     onSelect: () => void;
     onSwitch: () => void;
     onRefresh: () => void;
@@ -88,618 +90,290 @@ interface SortableRowProps {
     onWarmup?: () => void;
 }
 
-interface AccountRowContentProps {
-    account: Account;
-    isCurrent: boolean;
-    isRefreshing: boolean;
-    isSwitching: boolean;
-    onSwitch: () => void;
-    onRefresh: () => void;
-    onViewDevice: () => void;
-    onViewDetails: () => void;
-    onExport: () => void;
-    onDelete: () => void;
-    onToggleProxy: () => void;
-    onWarmup?: () => void;
-}
-
-// ============================================================================
-// 辅助函数
-// ============================================================================
-
-/**
- * 根据配额百分比获取对应的背景色类名
- */
+// ===================================
+// Helper - Quota Colors
+// ===================================
 function getColorClass(percentage: number): string {
     const color = getQuotaColor(percentage);
     switch (color) {
         case 'success': return 'bg-emerald-500';
         case 'warning': return 'bg-amber-500';
         case 'error': return 'bg-rose-500';
-        default: return 'bg-gray-500';
+        default: return 'bg-zinc-500';
     }
 }
-
-/**
- * 根据重置时间获取对应的文字色类名
- */
 function getTimeColorClass(resetTime: string | undefined): string {
     const color = getTimeRemainingColor(resetTime);
     switch (color) {
-        case 'success': return 'text-emerald-500 dark:text-emerald-400';
-        case 'warning': return 'text-amber-500 dark:text-amber-400';
-        default: return 'text-gray-400 dark:text-gray-500 opacity-60';
+        case 'success': return 'text-emerald-400';
+        case 'warning': return 'text-amber-400';
+        default: return 'text-zinc-500';
     }
 }
 
-// ============================================================================
-// 模型分组配置
-// ============================================================================
-
-const MODEL_GROUPS = {
-    CLAUDE: [
-        'claude-sonnet-4-5',
-        'claude-sonnet-4-5-thinking',
-        'claude-opus-4-5-thinking'
-    ],
-    GEMINI_PRO: [
-        'gemini-3-pro-high',
-        'gemini-3-pro-low',
-        'gemini-3-pro-preview'
-    ],
-    GEMINI_FLASH: [
-        'gemini-3-flash'
-    ]
-};
-
-function isModelProtected(protectedModels: string[] | undefined, modelName: string): boolean {
-    if (!protectedModels || protectedModels.length === 0) return false;
-    const lowerName = modelName.toLowerCase();
-
-    // Helper to check if any model in the group is protected
-    const isGroupProtected = (group: string[]) => {
-        return group.some(m => protectedModels.includes(m));
-    };
-
-    // UI Column Keys Mapping (for backward compatibility with hardcoded UI calls)
-    if (lowerName === 'gemini-pro') return isGroupProtected(MODEL_GROUPS.GEMINI_PRO);
-    if (lowerName === 'gemini-flash') return isGroupProtected(MODEL_GROUPS.GEMINI_FLASH);
-    if (lowerName === 'claude-sonnet') return isGroupProtected(MODEL_GROUPS.CLAUDE);
-
-    // 1. Gemini Pro Group
-    if (MODEL_GROUPS.GEMINI_PRO.some(m => lowerName === m)) {
-        return isGroupProtected(MODEL_GROUPS.GEMINI_PRO);
-    }
-
-    // 2. Claude Group
-    if (MODEL_GROUPS.CLAUDE.some(m => lowerName === m)) {
-        return isGroupProtected(MODEL_GROUPS.CLAUDE);
-    }
-
-    // 3. Gemini Flash Group
-    if (MODEL_GROUPS.GEMINI_FLASH.some(m => lowerName === m)) {
-        return isGroupProtected(MODEL_GROUPS.GEMINI_FLASH);
-    }
-
-    // 兜底直接检查 (Strict check for exact match or normalized ID)
-    return protectedModels.includes(lowerName);
-}
-
-// ============================================================================
-// 子组件
-// ============================================================================
-
-/**
- * 可拖拽的表格行组件
- * 使用 @dnd-kit/sortable 实现拖拽功能
- */
+// ===================================
+// Row Component
+// ===================================
 function SortableAccountRow({
-    account,
-    selected,
-    isRefreshing,
-    isCurrent,
-    isSwitching,
-    isDragging,
-    onSelect,
-    onSwitch,
-    onRefresh,
-    onViewDevice,
-    onViewDetails,
-    onExport,
-    onDelete,
-    onToggleProxy,
-    onWarmup,
+    account, selected, isRefreshing, isCurrent, isSwitching,
+    onSelect, onSwitch, onRefresh, onViewDevice, onViewDetails, onExport, onDelete, onToggleProxy, onWarmup
 }: SortableRowProps) {
     const { t } = useTranslation();
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-        isDragging: isSortableDragging,
-    } = useSortable({ id: account.id });
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } = useSortable({ id: account.id });
 
     const style = {
         transform: CSS.Transform.toString(transform),
         transition,
-        opacity: isSortableDragging ? 0.5 : 1,
-        zIndex: isSortableDragging ? 1000 : 'auto',
+        opacity: isSortableDragging ? 0.4 : 1,
+        zIndex: isSortableDragging ? 50 : undefined,
     };
 
     return (
-        <tr
-            ref={setNodeRef}
-            style={style as React.CSSProperties}
-            className={cn(
-                "group transition-colors border-b border-gray-100 dark:border-base-200",
-                isCurrent && "bg-blue-50/50 dark:bg-blue-900/10",
-                isDragging && "bg-blue-100 dark:bg-blue-900/30 shadow-lg",
-                !isDragging && "hover:bg-gray-50 dark:hover:bg-base-200"
-            )}
-        >
-            {/* 拖拽手柄 */}
-            <td className="pl-2 py-1 w-8">
-                <div
-                    {...attributes}
-                    {...listeners}
-                    className="flex items-center justify-center w-6 h-6 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded hover:bg-gray-100 dark:hover:bg-gray-700"
-                    title={t('accounts.drag_to_reorder')}
-                >
-                    <GripVertical className="w-4 h-4" />
+        <div ref={setNodeRef} style={style} className={cn(
+            "group relative grid grid-cols-[28px_28px_240px_1fr_100px_auto] gap-2 items-center px-2 py-1 mb-[1px] rounded-md transition-all duration-200",
+            "border border-white/5 bg-zinc-900/40 backdrop-blur-sm",
+            "hover:border-white/10 hover:bg-zinc-900/60 hover:translate-x-0.5",
+            isCurrent && "border-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10",
+            selected && !isCurrent && "border-indigo-500/30 bg-indigo-500/10",
+        )}>
+            {/* Drag Handle */}
+            <div className="flex justify-center">
+                <div {...attributes} {...listeners} className="p-1 cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-300 transition-colors">
+                    <GripVertical className="w-5 h-5" />
                 </div>
-            </td>
-            {/* 复选框 */}
-            <td className="px-2 py-1 w-10">
-                <input
-                    type="checkbox"
-                    className="checkbox checkbox-xs rounded border-2 border-gray-400 dark:border-gray-500 checked:border-blue-600 checked:bg-blue-600 [--chkbg:theme(colors.blue.600)] [--chkfg:white]"
-                    checked={selected}
-                    onChange={onSelect}
-                    onClick={(e) => e.stopPropagation()}
-                />
-            </td>
-            <AccountRowContent
-                account={account}
-                isCurrent={isCurrent}
-                isRefreshing={isRefreshing}
-                isSwitching={isSwitching}
-                onSwitch={onSwitch}
-                onRefresh={onRefresh}
-                onViewDevice={onViewDevice}
-                onViewDetails={onViewDetails}
-                onExport={onExport}
-                onDelete={onDelete}
-                onToggleProxy={onToggleProxy}
-                onWarmup={onWarmup}
-            />
-        </tr>
-    );
-}
+            </div>
 
-/**
- * 账号行内容组件
- * 渲染邮箱、配额、最后使用时间和操作按钮等列
- */
-function AccountRowContent({
-    account,
-    isCurrent,
-    isRefreshing,
-    isSwitching,
-    onSwitch,
-    onRefresh,
-    onViewDevice,
-    onViewDetails,
-    onExport,
-    onDelete,
-    onToggleProxy,
-    onWarmup,
-}: AccountRowContentProps) {
-    const { t } = useTranslation();
-    const { config } = useConfigStore();
-
-    // 模型配置映射：model_id -> { label, protectedKey }
-    const MODEL_CONFIG: Record<string, { label: string; protectedKey: string }> = {
-        'gemini-3-pro-high': { label: 'G3 Pro', protectedKey: 'gemini-pro' },
-        'gemini-3-flash': { label: 'G3 Flash', protectedKey: 'gemini-flash' },
-        'gemini-3-pro-image': { label: 'G3 Image', protectedKey: 'gemini-pro-image' },
-        'claude-sonnet-4-5-thinking': { label: 'Claude 4.5', protectedKey: 'claude-sonnet' },
-    };
-
-    // 获取要显示的模型列表
-    const pinnedModels = config?.pinned_quota_models?.models || Object.keys(MODEL_CONFIG);
-    const isDisabled = Boolean(account.disabled);
-
-    return (
-        <>
-            {/* 邮箱列 */}
-            <td className="px-4 py-1">
-                <div className="flex items-center gap-3">
-                    <span className={cn(
-                        "font-medium text-sm truncate max-w-[180px] xl:max-w-none transition-colors",
-                        isCurrent ? "text-blue-700 dark:text-blue-400" : "text-gray-900 dark:text-base-content"
-                    )} title={account.email}>
-                        {account.email}
-                    </span>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        {isCurrent && (
-                            <span className="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-[10px] font-bold shadow-sm border border-blue-200/50 dark:border-blue-800/50">
-                                {t('accounts.current').toUpperCase()}
-                            </span>
-                        )}
-
-                        {isDisabled && (
-                            <span
-                                className="px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-rose-200/50"
-                                title={account.disabled_reason || t('accounts.disabled_tooltip')}
-                            >
-                                <Ban className="w-2.5 h-2.5" />
-                                <span>{t('accounts.disabled')}</span>
-                            </span>
-                        )}
-
-                        {account.proxy_disabled && (
-                            <span
-                                className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-orange-200/50"
-                                title={account.proxy_disabled_reason || t('accounts.proxy_disabled_tooltip')}
-                            >
-                                <Ban className="w-2.5 h-2.5" />
-                                <span>{t('accounts.proxy_disabled')}</span>
-                            </span>
-                        )}
-
-                        {account.quota?.is_forbidden && (
-                            <span className="px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-red-200/50" title={t('accounts.forbidden_tooltip')}>
-                                <Lock className="w-2.5 h-2.5" />
-                                <span>{t('accounts.forbidden')}</span>
-                            </span>
-                        )}
-
-                        {/* 订阅类型徽章 */}
-                        {account.quota?.subscription_tier && (() => {
-                            const tier = account.quota.subscription_tier.toLowerCase();
-                            if (tier.includes('ultra')) {
-                                return (
-                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] font-bold shadow-sm hover:scale-105 transition-transform cursor-default">
-                                        <Gem className="w-2.5 h-2.5 fill-current" />
-                                        ULTRA
-                                    </span>
-                                );
-                            } else if (tier.includes('pro')) {
-                                return (
-                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold shadow-sm hover:scale-105 transition-transform cursor-default">
-                                        <Diamond className="w-2.5 h-2.5 fill-current" />
-                                        PRO
-                                    </span>
-                                );
-                            } else {
-                                return (
-                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 text-[10px] font-bold shadow-sm border border-gray-200 dark:border-white/10 hover:bg-gray-200 transition-colors cursor-default">
-                                        <Circle className="w-2.5 h-2.5" />
-                                        FREE
-                                    </span>
-                                );
-                            }
-                        })()}
-                    </div>
-                </div>
-            </td>
-
-            {/* 模型配额列 */}
-            <td className="px-4 py-1">
-                {account.quota?.is_forbidden ? (
-                    <div className="flex items-center gap-2 text-xs text-red-500 dark:text-red-400 bg-red-50/50 dark:bg-red-900/10 p-1.5 rounded-lg border border-red-100 dark:border-red-900/30">
-                        <Ban className="w-4 h-4 shrink-0" />
-                        <span>{t('accounts.forbidden_msg')}</span>
-                    </div>
-                ) : (
-                    <div className={cn(
-                        "grid gap-x-4 gap-y-1 py-0",
-                        pinnedModels.length === 1 ? "grid-cols-1" : "grid-cols-2"
-                    )}>
-                        {pinnedModels.filter(modelId => MODEL_CONFIG[modelId]).map((modelId) => {
-                            const modelConfig = MODEL_CONFIG[modelId];
-                            const modelData = account.quota?.models.find(m => m.name.toLowerCase() === modelId);
-
-                            return (
-                                <div key={modelId} className="relative h-[22px] flex items-center px-1.5 rounded-md overflow-hidden border border-gray-100/50 dark:border-white/5 bg-gray-50/30 dark:bg-white/5 group/quota">
-                                    {modelData && (
-                                        <div
-                                            className={`absolute inset-y-0 left-0 transition-all duration-700 ease-out opacity-15 dark:opacity-20 ${getColorClass(modelData.percentage)}`}
-                                            style={{ width: `${modelData.percentage}%` }}
-                                        />
-                                    )}
-                                    <div className="relative z-10 w-full flex items-center text-[10px] font-mono leading-none">
-                                        <span className="min-w-[54px] max-w-[72px] text-gray-500 dark:text-gray-400 font-bold truncate pr-1" title={modelId}>
-                                            {modelConfig.label}
-                                        </span>
-                                        <div className="flex-1 flex justify-center">
-                                            {modelData?.reset_time ? (
-                                                <span className={cn("flex items-center gap-0.5 font-medium transition-colors", getTimeColorClass(modelData.reset_time))}>
-                                                    <Clock className="w-2.5 h-2.5" />
-                                                    {formatTimeRemaining(modelData.reset_time)}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
-                                            )}
-                                        </div>
-                                        <span className={cn("w-[36px] text-right font-bold transition-colors flex items-center justify-end gap-0.5",
-                                            getQuotaColor(modelData?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
-                                                getQuotaColor(modelData?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                        )}>
-                                            {isModelProtected(account.protected_models, modelConfig.protectedKey) && (
-                                                <span title={t('accounts.quota_protected')}><Lock className="w-2.5 h-2.5 text-amber-500" /></span>
-                                            )}
-                                            {modelData ? `${modelData.percentage}%` : '-'}
-                                        </span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </td>
-
-            {/* 最后使用时间列 */}
-            <td className="px-4 py-1">
-                <div className="flex flex-col">
-                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400 font-mono whitespace-nowrap">
-                        {new Date(account.last_used * 1000).toLocaleDateString()}
-                    </span>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 font-mono whitespace-nowrap leading-tight">
-                        {new Date(account.last_used * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                </div>
-            </td>
-
-            {/* 操作列 */}
-            <td className={cn(
-                "px-4 py-1 sticky right-0 z-10 shadow-[-12px_0_12px_-12px_rgba(0,0,0,0.1)] dark:shadow-[-12px_0_12px_-12px_rgba(255,255,255,0.05)] text-center",
-                // 动态背景色处理
-                isCurrent
-                    ? "bg-[#f1f6ff] dark:bg-[#1e2330]" // 接近 blue-50/50 的实色
-                    : "bg-white dark:bg-base-100",
-                !isCurrent && "group-hover:bg-gray-50 dark:group-hover:bg-base-200"
-            )}>
-                <div className="flex items-center justify-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                    <button
-                        className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-all"
-                        onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
-                        title={t('common.details')}
-                    >
-                        <Info className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
-                        onClick={(e) => { e.stopPropagation(); onViewDevice(); }}
-                        title={t('accounts.device_fingerprint')}
-                    >
-                        <Fingerprint className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        className={`p-1.5 text-gray-500 dark:text-gray-400 rounded-lg transition-all ${(isSwitching || isDisabled) ? 'bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 cursor-not-allowed' : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'}`}
-                        onClick={(e) => { e.stopPropagation(); onSwitch(); }}
-                        title={isDisabled ? t('accounts.disabled_tooltip') : (isSwitching ? t('common.loading') : t('accounts.switch_to'))}
-                        disabled={isSwitching || isDisabled}
-                    >
-                        <ArrowRightLeft className={`w-3.5 h-3.5 ${isSwitching ? 'animate-spin' : ''}`} />
-                    </button>
-                    {onWarmup && (
-                        <button
-                            className={`p-1.5 text-gray-500 dark:text-gray-400 rounded-lg transition-all ${(isRefreshing || isDisabled) ? 'bg-orange-50 dark:bg-orange-900/10 text-orange-600 dark:text-orange-400 cursor-not-allowed' : 'hover:text-orange-500 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30'}`}
-                            onClick={(e) => { e.stopPropagation(); onWarmup(); }}
-                            title={isDisabled ? t('accounts.disabled_tooltip') : (isRefreshing ? t('common.loading') : t('accounts.warmup_this', '预热该账号'))}
-                            disabled={isRefreshing || isDisabled}
-                        >
-                            <Sparkles className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-pulse' : ''}`} />
-                        </button>
+            {/* Checkbox */}
+            <div className="flex justify-center">
+                 <div 
+                    className={cn(
+                        "w-5 h-5 rounded border flex items-center justify-center transition-all cursor-pointer",
+                        selected 
+                            ? "bg-indigo-500 border-indigo-500" 
+                            : "border-zinc-600 group-hover:border-zinc-500 bg-transparent"
                     )}
-                    <button
-                        className={`p-1.5 text-gray-500 dark:text-gray-400 rounded-lg transition-all ${(isRefreshing || isDisabled) ? 'bg-green-50 dark:bg-green-900/10 text-green-600 dark:text-green-400 cursor-not-allowed' : 'hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30'}`}
-                        onClick={(e) => { e.stopPropagation(); onRefresh(); }}
-                        title={isDisabled ? t('accounts.disabled_tooltip') : (isRefreshing ? t('common.refreshing') : t('common.refresh'))}
-                        disabled={isRefreshing || isDisabled}
-                    >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                    </button>
-                    <button
-                        className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
-                        onClick={(e) => { e.stopPropagation(); onExport(); }}
-                        title={t('common.export')}
-                    >
-                        <Download className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        className={cn(
-                            "p-1.5 rounded-lg transition-all",
-                            account.proxy_disabled
-                                ? "text-gray-500 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30"
-                                : "text-gray-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30"
-                        )}
-                        onClick={(e) => { e.stopPropagation(); onToggleProxy(); }}
-                        title={account.proxy_disabled ? t('accounts.enable_proxy') : t('accounts.disable_proxy')}
-                    >
-                        {account.proxy_disabled ? (
-                            <ToggleRight className="w-3.5 h-3.5" />
-                        ) : (
-                            <ToggleLeft className="w-3.5 h-3.5" />
-                        )}
-                    </button>
-                    <button
-                        className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all"
-                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                        title={t('common.delete')}
-                    >
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    onClick={(e) => { e.stopPropagation(); onSelect(); }}
+                >
+                    {selected && <div className="w-2.5 h-2.5 rounded-[1px] bg-white" />}
                 </div>
-            </td>
-        </>
+            </div>
+
+            {/* Email & Account Info */}
+            <div className="flex flex-col min-w-0 pr-4">
+                <div className="flex items-center gap-2 mb-1">
+                    {/* Subscription Tier */}
+                    {account.quota?.subscription_tier && (() => {
+                         const tier = account.quota.subscription_tier.toLowerCase();
+                         if (tier.includes('ultra')) return <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[9px] font-bold border border-purple-500/20">ULTRA</span>;
+                         if (tier.includes('pro')) return <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[9px] font-bold border border-blue-500/20">PRO</span>;
+                         return <span className="px-1.5 py-0.5 rounded bg-zinc-700/50 text-zinc-400 text-[9px] font-bold border border-white/5">FREE</span>;
+                    })()}
+
+                    <span className={cn(
+                        "font-bold text-sm truncate tracking-wide font-mono",
+                        isCurrent ? "text-indigo-300" : "text-zinc-200"
+                    )} title={account.email}>{account.email}</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Tags */}
+                    {isCurrent && <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[9px] font-bold border border-indigo-500/20">CURRENT</span>}
+                    {account.disabled && <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/20">DISABLED</span>}
+                    {account.proxy_disabled && <span className="px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 text-[9px] font-bold border border-orange-500/20">NO PROXY</span>}
+                </div>
+            </div>
+
+            {/* Quota Bars */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                 {(() => {
+                    const config = useConfigStore(s => s.config);
+                    const pinned = config?.pinned_quota_models?.models || [];
+                    const modelsToShow = pinned.length > 0 ? pinned : [
+                        'gemini-3-pro-high', 
+                        'gemini-3-flash', 
+                        'claude-sonnet-4-5-thinking'
+                    ];
+
+                    return modelsToShow.map(modelId => {
+                        const m = account.quota?.models.find(m => m.name === modelId);
+                        if (!m) return null;
+                        
+                        return (
+                            <div key={modelId} className="flex items-center gap-2 text-[10px]" title={m.reset_time ? `${t('common.reset')}: ${formatTimeRemaining(m.reset_time)}` : undefined}>
+                                <span className="w-12 font-bold text-zinc-500 shrink-0 text-right">{getModelLabel(modelId)}</span>
+                                <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-white/5">
+                                    <div className={cn("h-full rounded-full", getColorClass(m.percentage))} style={{ width: `${m.percentage}%` }} />
+                                </div>
+                                <span className={cn("w-8 font-mono text-right", getTimeColorClass(m.reset_time))}>{m.percentage}%</span>
+                            </div>
+                        );
+                    });
+                 })()}
+            </div>
+
+            {/* Last Used */}
+            <div className="flex flex-col text-right">
+                <span className="text-xs font-mono text-zinc-300">
+                    {new Date(account.last_used * 1000).toLocaleDateString()}
+                </span>
+                <span className="text-[10px] font-mono text-zinc-500">
+                    {new Date(account.last_used * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                 <button onClick={onViewDetails} className="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title={t('common.details')}>
+                    <Info className="w-3.5 h-3.5" />
+                 </button>
+                 <button onClick={onViewDevice} className="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title={t('accounts.device_fingerprint')}>
+                    <Fingerprint className="w-3.5 h-3.5" />
+                 </button>
+                 <button 
+                    onClick={onSwitch} 
+                    disabled={isSwitching}
+                    className="p-1 rounded text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/20 transition-colors disabled:opacity-50" 
+                    title={t('common.switch')}
+                >
+                    <ArrowRightLeft className={cn("w-3.5 h-3.5", isSwitching && "animate-spin")} />
+                 </button>
+                 {onWarmup && (
+                    <button 
+                        onClick={onWarmup} 
+                        disabled={isRefreshing}
+                        className="p-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                        title={t('accounts.warmup_this')}
+                    >
+                        <Sparkles className={cn("w-3.5 h-3.5", isRefreshing && "animate-pulse")} />
+                    </button>
+                 )}
+                 <button 
+                    onClick={onRefresh} 
+                    disabled={isRefreshing}
+                    className="p-1 rounded text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                    title={t('common.refresh')}
+                >
+                    <RefreshCw className={cn("w-3.5 h-3.5", isRefreshing && "animate-spin")} />
+                 </button>
+                 <button 
+                    onClick={onExport} 
+                    className="p-1 rounded text-zinc-400 hover:text-blue-400 hover:bg-blue-500/20 transition-colors"
+                    title={t('common.export')}
+                >
+                    <Download className="w-3.5 h-3.5" />
+                 </button>
+                 <button onClick={onToggleProxy} className="p-1 rounded text-zinc-400 hover:text-orange-400 hover:bg-orange-500/20 transition-colors" title={t('accounts.toggle_proxy')}>
+                    {account.proxy_disabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                 </button>
+                 <button onClick={onDelete} className="p-1 rounded text-zinc-400 hover:text-rose-400 hover:bg-rose-500/20 transition-colors" title={t('common.delete')}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                 </button>
+            </div>
+        </div>
     );
 }
 
-// ============================================================================
-// 主组件
-// ============================================================================
-
-/**
- * 账号表格组件
- * 支持拖拽排序、多选、批量操作等功能
- */
-function AccountTable({
-    accounts,
-    selectedIds,
-    refreshingIds,
-    onToggleSelect,
-    onToggleAll,
-    currentAccountId,
-    switchingAccountId,
-    onSwitch,
-    onRefresh,
-    onViewDevice,
-    onViewDetails,
-    onExport,
-    onDelete,
-    onToggleProxy,
-    onReorder,
+// ===================================
+// Main Component
+// ===================================
+const AccountTable = memo(function AccountTable({
+    accounts, selectedIds, refreshingIds, onToggleSelect, onToggleAll,
+    currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDevice,
+    onViewDetails, onExport, onDelete, onToggleProxy, onReorder, onWarmup
 }: AccountTableProps) {
     const { t } = useTranslation();
     const [activeId, setActiveId] = useState<string | null>(null);
-
-    // 配置拖拽传感器
     const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: { distance: 8 }, // 需要移动 8px 才触发拖拽
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
+        useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
     const accountIds = useMemo(() => accounts.map(a => a.id), [accounts]);
     const activeAccount = useMemo(() => accounts.find(a => a.id === activeId), [accounts, activeId]);
 
-    const handleDragStart = (event: DragStartEvent) => {
-        setActiveId(event.active.id as string);
-    };
-
+    const handleDragStart = (event: DragStartEvent) => setActiveId(event.active.id as string);
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
         setActiveId(null);
-
-        if (over && active.id !== over.id) {
+        if (over && active.id !== over.id && onReorder) {
             const oldIndex = accountIds.indexOf(active.id as string);
             const newIndex = accountIds.indexOf(over.id as string);
-
-            if (oldIndex !== -1 && newIndex !== -1 && onReorder) {
-                onReorder(arrayMove(accountIds, oldIndex, newIndex));
-            }
+            onReorder(arrayMove(accountIds, oldIndex, newIndex));
         }
     };
 
     if (accounts.length === 0) {
         return (
-            <div className="bg-white dark:bg-base-100 rounded-2xl p-12 shadow-sm border border-gray-100 dark:border-base-200 text-center">
-                <p className="text-gray-400 mb-2">{t('accounts.empty.title')}</p>
-                <p className="text-sm text-gray-400">{t('accounts.empty.desc')}</p>
+            <div className="flex flex-col items-center justify-center py-20 bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-2xl">
+                <p className="text-zinc-500 mb-2">{t('accounts.empty.title')}</p>
+                <p className="text-sm text-zinc-600">{t('accounts.empty.desc')}</p>
             </div>
         );
     }
 
     return (
-        <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-        >
-            <div className="overflow-x-auto">
-                <table className="w-full">
-                    <thead>
-                        <tr className="border-b border-gray-100 dark:border-base-200 bg-gray-50 dark:bg-base-200">
-                            <th className="pl-2 py-2 text-left w-8">
-                                <span className="sr-only">{t('accounts.drag_to_reorder')}</span>
-                            </th>
-                            <th className="px-2 py-2 text-left w-10">
-                                <input
-                                    type="checkbox"
-                                    className="checkbox checkbox-sm rounded border-2 border-gray-400 dark:border-gray-500 checked:border-blue-600 checked:bg-blue-600 [--chkbg:theme(colors.blue.600)] [--chkfg:white]"
-                                    checked={accounts.length > 0 && selectedIds.size === accounts.length}
-                                    onChange={onToggleAll}
-                                />
-                            </th>
-                            <th className="px-4 py-1 text-left rtl:text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">{t('accounts.table.email')}</th>
-                            <th className="px-4 py-1 text-left rtl:text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[440px] min-w-[360px] whitespace-nowrap">{t('accounts.table.quota')}</th>
-                            <th className="px-4 py-1 text-left rtl:text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">{t('accounts.table.last_used')}</th>
-                            <th className="px-4 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap sticky right-0 bg-gray-50 dark:bg-base-200 z-20 shadow-[-12px_0_12px_-12px_rgba(0,0,0,0.1)] dark:shadow-[-12px_0_12px_-12px_rgba(255,255,255,0.05)] text-center">{t('accounts.table.actions')}</th>
-                        </tr>
-                    </thead>
-                    <SortableContext items={accountIds} strategy={verticalListSortingStrategy}>
-                        <tbody className="divide-y divide-gray-100 dark:divide-base-200">
-                            {accounts.map((account) => (
-                                <SortableAccountRow
-                                    key={account.id}
-                                    account={account}
-                                    selected={selectedIds.has(account.id)}
-                                    isRefreshing={refreshingIds.has(account.id)}
-                                    isCurrent={account.id === currentAccountId}
-                                    isSwitching={account.id === switchingAccountId}
-                                    isDragging={account.id === activeId}
-                                    onSelect={() => onToggleSelect(account.id)}
-                                    onSwitch={() => onSwitch(account.id)}
-                                    onRefresh={() => onRefresh(account.id)}
-                                    onViewDevice={() => onViewDevice(account.id)}
-                                    onViewDetails={() => onViewDetails(account.id)}
-                                    onExport={() => onExport(account.id)}
-                                    onDelete={() => onDelete(account.id)}
-                                    onToggleProxy={() => onToggleProxy(account.id)}
-                                />
-                            ))}
-                        </tbody>
-                    </SortableContext>
-                </table>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <div className="w-full">
+                {/* Header Row */}
+                <div className="grid grid-cols-[28px_28px_240px_1fr_100px_auto] gap-2 px-2 py-1.5 mb-1 text-[9px] font-bold text-zinc-500 uppercase tracking-widest bg-zinc-900/80 backdrop-blur border-b border-white/5 sticky top-0 z-20">
+                    <div className="text-center">#</div>
+                    <div className="flex justify-center">
+                        <div 
+                            className={cn(
+                                "w-3.5 h-3.5 rounded border flex items-center justify-center transition-all cursor-pointer",
+                                accounts.length > 0 && selectedIds.size === accounts.length
+                                    ? "bg-indigo-500 border-indigo-500" 
+                                    : "border-zinc-600 bg-transparent"
+                            )}
+                            onClick={onToggleAll}
+                        >
+                            {accounts.length > 0 && selectedIds.size === accounts.length && <div className="w-2 h-2 rounded-[0.5px] bg-white" />}
+                        </div>
+                    </div>
+                    <div>{t('accounts.table.email')}</div>
+                    <div>{t('accounts.table.quota')}</div>
+                    <div className="text-right">{t('accounts.table.last_used')}</div>
+                    <div className="text-right">{t('accounts.table.actions')}</div>
+                </div>
+
+                <SortableContext items={accountIds} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-0.5">
+                        {accounts.map((account) => (
+                            <SortableAccountRow
+                                key={account.id}
+                                account={account}
+                                selected={selectedIds.has(account.id)}
+                                isRefreshing={refreshingIds.has(account.id)}
+                                isCurrent={account.id === currentAccountId}
+                                isSwitching={account.id === switchingAccountId}
+                                onSelect={() => onToggleSelect(account.id)}
+                                onSwitch={() => onSwitch(account.id)}
+                                onRefresh={() => onRefresh(account.id)}
+                                onViewDevice={() => onViewDevice(account.id)}
+                                onViewDetails={() => onViewDetails(account.id)}
+                                onExport={() => onExport(account.id)}
+                                onDelete={() => onDelete(account.id)}
+                                onToggleProxy={() => onToggleProxy(account.id)}
+                                onWarmup={onWarmup ? () => onWarmup(account.id) : undefined}
+                            />
+                        ))}
+                    </div>
+                </SortableContext>
             </div>
 
-            {/* 拖拽悬浮预览层 */}
+            {/* Drag Overlay */}
             <DragOverlay>
                 {activeAccount ? (
-                    <table className="w-full bg-white dark:bg-base-100 shadow-2xl rounded-lg border border-blue-200 dark:border-blue-800">
-                        <tbody>
-                            <tr className="bg-blue-50 dark:bg-blue-900/30">
-                                <td className="pl-2 py-1 w-8">
-                                    <div className="flex items-center justify-center w-6 h-6 text-blue-500">
-                                        <GripVertical className="w-4 h-4" />
-                                    </div>
-                                </td>
-                                <td className="px-2 py-1 w-10">
-                                    <input
-                                        type="checkbox"
-                                        className="checkbox checkbox-xs rounded border-2"
-                                        checked={selectedIds.has(activeAccount.id)}
-                                        readOnly
-                                    />
-                                </td>
-                                <AccountRowContent
-                                    account={activeAccount}
-                                    isCurrent={activeAccount.id === currentAccountId}
-                                    isRefreshing={refreshingIds.has(activeAccount.id)}
-                                    isSwitching={activeAccount.id === switchingAccountId}
-                                    onSwitch={() => { }}
-                                    onRefresh={() => { }}
-                                    onViewDevice={() => { }}
-                                    onViewDetails={() => { }}
-                                    onExport={() => { }}
-                                    onDelete={() => { }}
-                                    onToggleProxy={() => { }}
-                                />
-                            </tr>
-                        </tbody>
-                    </table>
+                     <div className="grid grid-cols-[40px_40px_280px_1fr_160px_auto] gap-4 items-center p-3 rounded-xl border border-indigo-500/50 bg-zinc-900/90 shadow-2xl backdrop-blur-xl">
+                        {/* Simplified content for drag overlay */}
+                         <div className="flex justify-center"><GripVertical className="w-5 h-5 text-indigo-500" /></div>
+                         <div className="flex justify-center"><div className="w-5 h-5 rounded border border-indigo-500 bg-indigo-500/20" /></div>
+                         <div className="font-bold text-sm text-indigo-300 font-mono">{activeAccount.email}</div>
+                         <div className="text-xs text-zinc-500">Dragging...</div>
+                     </div>
                 ) : null}
             </DragOverlay>
         </DndContext>
     );
-}
+});
 
 export default AccountTable;

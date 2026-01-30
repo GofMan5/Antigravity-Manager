@@ -58,8 +58,8 @@ impl AccountService {
     }
 
     /// 列表获取
-    pub fn list_accounts(&self) -> Result<Vec<Account>, String> {
-        modules::list_accounts()
+    pub async fn list_accounts(&self) -> Result<Vec<Account>, String> {
+        modules::list_accounts().await
     }
 
     /// 获取当前 ID

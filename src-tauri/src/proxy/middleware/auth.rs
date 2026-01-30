@@ -97,7 +97,9 @@ async fn auth_middleware_internal(
                 .and_then(|h| h.to_str().ok())
         });
 
-    if security.api_key.is_empty() && (security.admin_password.is_none() || security.admin_password.as_ref().unwrap().is_empty()) {
+    let admin_password_empty = security.admin_password.as_ref().map_or(true, |s| s.is_empty());
+
+    if security.api_key.is_empty() && admin_password_empty {
         if force_strict {
              tracing::error!("Admin auth is required but both api_key and admin_password are empty; denying request");
              return Err(StatusCode::UNAUTHORIZED);
