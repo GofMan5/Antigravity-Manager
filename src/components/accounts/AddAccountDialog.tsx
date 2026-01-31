@@ -5,14 +5,22 @@ import {
     Copy, Check, Link2, Sparkles, Upload, FolderOpen, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAccountStore } from '../../stores/useAccountStore';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import { request as invoke } from '../../utils/request';
-import { isTauri } from '../../utils/env';
-import { copyToClipboard } from '../../utils/clipboard';
-import { cn } from '../../utils/cn';
+
+// FSD imports
+import { invoke } from '@/shared/api';
+import { isTauri, cn, copyToClipboard } from '@/shared/lib';
+import { 
+    useAccounts,
+    useStartOAuthLogin, 
+    useCompleteOAuthLogin, 
+    useCancelOAuthLogin, 
+    useImportFromDb, 
+    useImportV1Accounts, 
+    useImportFromCustomDb 
+} from '@/features/accounts';
 
 interface AddAccountDialogProps {
     onAdd: (email: string, refreshToken: string) => Promise<void>;
@@ -70,7 +78,16 @@ StatusAlert.displayName = 'StatusAlert';
 
 function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
     const { t } = useTranslation();
-    const fetchAccounts = useAccountStore(state => state.fetchAccounts);
+    
+    // FSD hooks
+    const { refetch: fetchAccounts } = useAccounts();
+    const startOAuthMutation = useStartOAuthLogin();
+    const completeOAuthMutation = useCompleteOAuthLogin();
+    const cancelOAuthMutation = useCancelOAuthLogin();
+    const importFromDbMutation = useImportFromDb();
+    const importV1Mutation = useImportV1Accounts();
+    const importCustomDbMutation = useImportFromCustomDb();
+    
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<TabType>(isTauri() ? 'oauth' : 'token');
     const [refreshToken, setRefreshToken] = useState('');
@@ -81,8 +98,6 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
     // UI State
     const [status, setStatus] = useState<Status>('idle');
     const [message, setMessage] = useState('');
-
-    const { startOAuthLogin, completeOAuthLogin, cancelOAuthLogin, importFromDb, importV1Accounts, importFromCustomDb } = useAccountStore();
 
     const oauthUrlRef = useRef(oauthUrl);
     const statusRef = useRef(status);
@@ -134,7 +149,7 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                 setMessage(`${t('accounts.add.tabs.oauth')}...`);
 
                 try {
-                    await completeOAuthLogin();
+                    await completeOAuthMutation.mutateAsync();
                     setStatus('success');
                     setMessage(`${t('accounts.add.tabs.oauth')} ${t('common.success')}!`);
                     setTimeout(() => {
@@ -155,7 +170,7 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
 
         setupListener();
         return () => { if (unlisten) unlisten(); };
-    }, [completeOAuthLogin, t]);
+    }, [completeOAuthMutation, t]);
 
     // Pre-generate OAuth URL
     useEffect(() => {
@@ -172,10 +187,10 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
     // Cancel OAuth when leaving tab
     useEffect(() => {
         if (!isOpen || activeTab === 'oauth' || !oauthUrl) return;
-        cancelOAuthLogin().catch(() => {});
+        cancelOAuthMutation.mutate();
         setOauthUrl('');
         setOauthUrlCopied(false);
-    }, [isOpen, activeTab, cancelOAuthLogin, oauthUrl]);
+    }, [isOpen, activeTab, cancelOAuthMutation, oauthUrl]);
 
     const resetState = () => {
         setStatus('idle');
@@ -337,11 +352,11 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
             handleOAuthWeb();
             return;
         }
-        handleAction(t('accounts.add.tabs.oauth'), startOAuthLogin, { clearOauthUrl: false });
+        handleAction(t('accounts.add.tabs.oauth'), () => startOAuthMutation.mutateAsync(), { clearOauthUrl: false });
     };
 
     const handleCompleteOAuth = () => {
-        handleAction(t('accounts.add.tabs.oauth'), completeOAuthLogin, { clearOauthUrl: false });
+        handleAction(t('accounts.add.tabs.oauth'), () => completeOAuthMutation.mutateAsync(), { clearOauthUrl: false });
     };
 
     const handleCopyUrl = async () => {
@@ -384,8 +399,8 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
         }
     };
 
-    const handleImportDb = () => handleAction(t('accounts.add.tabs.import'), importFromDb);
-    const handleImportV1 = () => handleAction(t('accounts.add.import.btn_v1'), importV1Accounts);
+    const handleImportDb = () => handleAction(t('accounts.add.tabs.import'), () => importFromDbMutation.mutateAsync());
+    const handleImportV1 = () => handleAction(t('accounts.add.import.btn_v1'), () => importV1Mutation.mutateAsync());
 
     const handleImportCustomDb = async () => {
         if (!isTauri()) {
@@ -401,7 +416,7 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                 ]
             });
             if (selected && typeof selected === 'string') {
-                handleAction(t('accounts.add.import.btn_custom_db') || 'Import Custom DB', () => importFromCustomDb(selected));
+                handleAction(t('accounts.add.import.btn_custom_db') || 'Import Custom DB', () => importCustomDbMutation.mutateAsync(selected));
             }
         } catch (err) {
             console.error('Failed to open dialog:', err);
@@ -781,7 +796,7 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                                     <button
                                         onClick={async () => {
                                             if (status === 'loading' && activeTab === 'oauth') {
-                                                await cancelOAuthLogin();
+                                                await cancelOAuthMutation.mutateAsync();
                                             }
                                             setIsOpen(false);
                                         }}

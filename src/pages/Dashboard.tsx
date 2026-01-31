@@ -3,25 +3,29 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Users, ArrowRight, Download, RefreshCw, LayoutDashboard } from 'lucide-react';
 import { motion } from 'framer-motion';
-
-import { isTauri } from '../utils/env';
 import { save } from '@tauri-apps/plugin-dialog';
-import { request as invoke } from '../utils/request';
-import { showToast } from '../components/common/ToastContainer';
 
-// FSD / Hooks
-import { useAccounts } from '../hooks/queries/useAccounts';
-import { useCurrentAccount } from '../hooks/queries/useCurrentAccount';
-import { Account } from '../types/account';
-import { DashboardSkeleton } from '../components/dashboard/DashboardSkeleton';
+// FSD imports
+import { isTauri } from '@/shared/lib';
+import { invoke } from '@/shared/api';
+import { showToast } from '@/components/common/ToastContainer';
+import { 
+  useAccounts, 
+  useCurrentAccount, 
+  useAddAccount, 
+  useSwitchAccount, 
+  useRefreshQuota 
+} from '@/features/accounts';
+import type { Account } from '@/entities/account';
 
-// UI
-import CurrentAccount from '../components/dashboard/CurrentAccount';
-import BestAccounts from '../components/dashboard/BestAccounts';
-import AddAccountDialog from '../components/accounts/AddAccountDialog';
-import { StatsRow } from '../components/dashboard/StatsRow';
-import { Button } from '../components/ui/button';
-import { Card } from '../components/ui/card';
+// UI Components
+import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton';
+import CurrentAccount from '@/components/dashboard/CurrentAccount';
+import BestAccounts from '@/components/dashboard/BestAccounts';
+import AddAccountDialog from '@/components/accounts/AddAccountDialog';
+import { StatsRow } from '@/components/dashboard/StatsRow';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 // Framer Motion Variants
 const containerVariants = {
@@ -50,9 +54,16 @@ function Dashboard() {
     const { t } = useTranslation();
     const navigate = useNavigate();
 
-    // Data Hooks (FSD: encapsulated data logic)
-    const { accounts, isLoading: isLoadingAccounts, addAccount, switchAccount } = useAccounts();
-    const { currentAccount, refreshQuota, isRefreshing } = useCurrentAccount();
+    // FSD Queries
+    const { data: accounts = [], isLoading: isLoadingAccounts } = useAccounts();
+    const { data: currentAccount } = useCurrentAccount();
+    
+    // FSD Mutations
+    const addAccountMutation = useAddAccount();
+    const switchAccountMutation = useSwitchAccount();
+    const refreshQuotaMutation = useRefreshQuota();
+    
+    const isRefreshing = refreshQuotaMutation.isPending;
     
     // Derived State (Stats)
     const stats = useMemo(() => {
@@ -102,33 +113,31 @@ function Dashboard() {
 
         isSwitchingRef.current = true;
         try {
-            await switchAccount(accountId);
+            await switchAccountMutation.mutateAsync(accountId);
             showToast(t('dashboard.toast.switch_success'), 'success');
         } catch (error) {
-            console.error('切换账号失败:', error);
+            console.error('Switch account failed:', error);
             showToast(`${t('dashboard.toast.switch_error')}: ${error}`, 'error');
         } finally {
             setTimeout(() => {
                 isSwitchingRef.current = false;
             }, 500);
         }
-    }, [switchAccount, t]);
+    }, [switchAccountMutation, t]);
 
     const handleAddAccount = useCallback(async (email: string, refreshToken: string) => {
-        await addAccount({ email, refreshToken });
-        // Invalidation handled by mutation hook
-    }, [addAccount]);
+        await addAccountMutation.mutateAsync({ email, refreshToken });
+    }, [addAccountMutation]);
 
     const handleRefreshCurrent = useCallback(async () => {
         if (!currentAccount) return;
         
         try {
-            await refreshQuota(currentAccount.id);
-            // Invalidation handled by mutation hook
+            await refreshQuotaMutation.mutateAsync(currentAccount.id);
         } catch (error) {
             console.error('[Dashboard] Refresh failed:', error);
         }
-    }, [currentAccount, refreshQuota]);
+    }, [currentAccount, refreshQuotaMutation]);
 
     const exportAccountsToJson = useCallback(async (accountsToExport: Account[]) => {
         try {

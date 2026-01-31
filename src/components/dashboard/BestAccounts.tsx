@@ -1,9 +1,9 @@
 import { TrendingUp } from 'lucide-react';
-import { Account } from '../../types/account';
+import { Account } from '@/entities/account';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Progress } from '../ui/progress';
 import { Badge } from '../ui/badge';
-import { cn } from '../../lib/utils';
+import { cn } from '@/shared/lib';
 import { formatTimeRemaining } from '../../utils/format';
 import { useTranslation } from 'react-i18next';
 import { memo } from 'react';

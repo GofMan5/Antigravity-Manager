@@ -2,7 +2,7 @@
 import { Users, Zap, Bot, AlertTriangle, TrendingUp } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from "../ui/card";
-import { cn } from "../../lib/utils";
+import { cn } from "@/shared/lib";
 
 interface DashboardStats {
     total: number;

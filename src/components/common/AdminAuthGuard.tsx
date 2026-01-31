@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, Key, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { isTauri } from '../../utils/env';
+import { isTauri } from '@/shared/lib';
 
 /**
  * AdminAuthGuard

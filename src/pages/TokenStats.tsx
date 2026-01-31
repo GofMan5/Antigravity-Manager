@@ -1,13 +1,17 @@
 // File: src/pages/TokenStats.tsx
 import React, { useEffect, useState, useMemo } from 'react';
-import { request as invoke } from '../utils/request';
 import { useTranslation } from 'react-i18next';
 import { Clock, Calendar, CalendarDays, RefreshCw } from 'lucide-react';
-import { StatsSummary } from '../components/stats/StatsSummary';
-import { StatsCharts, PieDataPoint } from '../components/stats/StatsCharts';
-import { RequestHealthCards, ProxyStats } from '../components/stats/RequestHealthCards';
-import { cn } from '../lib/utils';
-import { Button } from '../components/ui/button';
+
+// FSD imports
+import { invoke } from '@/shared/api';
+import { cn } from '@/shared/lib';
+
+// Components
+import { StatsSummary } from '@/components/stats/StatsSummary';
+import { StatsCharts, PieDataPoint } from '@/components/stats/StatsCharts';
+import { RequestHealthCards, ProxyStats } from '@/components/stats/RequestHealthCards';
+import { Button } from '@/components/ui/button';
 
 // --- Types (Shared) ---
 interface TokenStatsAggregated {

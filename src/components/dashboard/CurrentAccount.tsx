@@ -4,9 +4,9 @@ import { Progress } from '../ui/progress';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Mail, Zap, CheckCircle, Gem, Diamond, Circle, Copy, Check } from 'lucide-react';
-import { Account } from '../../types/account';
+import { Account } from '@/entities/account';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../lib/utils';
+import { cn } from '@/shared/lib';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 
 interface CurrentAccountProps {

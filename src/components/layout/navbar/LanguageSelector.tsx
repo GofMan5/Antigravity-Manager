@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfigStore } from '../../../stores/useConfigStore';
-import { cn } from '../../../lib/utils';
+import { cn } from '@/shared/lib';
 import { Button } from '../../ui/button';
 import { Check } from 'lucide-react';
 

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { memo } from 'react';
-import { Account } from '../../types/account';
+import { Account } from '@/entities/account';
 import AccountCard from './AccountCard';
 import { motion } from 'framer-motion';
 

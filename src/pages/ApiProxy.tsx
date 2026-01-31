@@ -1,8 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { request as invoke } from '../utils/request';
-import { isTauri } from '../utils/env';
-import { copyToClipboard } from '../utils/clipboard';
 import {
     Power,
     Copy,
@@ -24,18 +21,22 @@ import {
     X,
     Edit2
 } from 'lucide-react';
-import { AppConfig, ProxyConfig, StickySessionConfig, ExperimentalConfig } from '../types/config';
-import HelpTooltip from '../components/common/HelpTooltip';
-import ModalDialog from '../components/common/ModalDialog';
-import { showToast } from '../components/common/ToastContainer';
-import { cn } from '../utils/cn';
-import { useProxyModels } from '../hooks/useProxyModels';
-import GroupedSelect, { SelectOption } from '../components/common/GroupedSelect';
-import { CliSyncCard } from '../components/proxy/CliSyncCard';
-import DebouncedSlider from '../components/common/DebouncedSlider';
-import CircuitBreaker from '../components/settings/CircuitBreaker';
-import { CircuitBreakerConfig } from '../types/config';
-import SchedulingSettings from '../components/settings/SchedulingSettings';
+
+// FSD imports
+import { invoke } from '@/shared/api';
+import { isTauri, cn, copyToClipboard } from '@/shared/lib';
+import type { AppConfig, ProxyConfig, StickySessionConfig, ExperimentalConfig, CircuitBreakerConfig } from '@/entities/config';
+
+// Components
+import HelpTooltip from '@/components/common/HelpTooltip';
+import ModalDialog from '@/components/common/ModalDialog';
+import { showToast } from '@/components/common/ToastContainer';
+import { useProxyModels } from '@/hooks/useProxyModels';
+import GroupedSelect, { SelectOption } from '@/components/common/GroupedSelect';
+import { CliSyncCard } from '@/components/proxy/CliSyncCard';
+import DebouncedSlider from '@/components/common/DebouncedSlider';
+import CircuitBreaker from '@/components/settings/CircuitBreaker';
+import SchedulingSettings from '@/components/settings/SchedulingSettings';
 
 interface ProxyStatus {
     running: boolean;

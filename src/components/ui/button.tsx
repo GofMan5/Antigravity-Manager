@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "../../lib/utils"
+import { cn } from "@/shared/lib"
 
 // Since we don't have cva installed, we'll mimic the behavior or install it?
 // Wait, `class-variance-authority` is typical for shadcn.

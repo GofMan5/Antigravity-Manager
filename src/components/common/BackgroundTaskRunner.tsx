@@ -1,10 +1,14 @@
+// File: src/components/common/BackgroundTaskRunner.tsx
+// Background task runner for auto-refresh and auto-sync
+
 import { useEffect, useRef } from 'react';
-import { useConfigStore } from '../../stores/useConfigStore';
-import { useAccountStore } from '../../stores/useAccountStore';
+import { useConfigStore } from '@/stores/useConfigStore';
+import { useRefreshAllQuotas, useSyncAccountFromDb } from '@/features/accounts';
 
 function BackgroundTaskRunner() {
     const { config } = useConfigStore();
-    const { refreshAllQuotas } = useAccountStore();
+    const refreshAllQuotasMutation = useRefreshAllQuotas();
+    const syncAccountMutation = useSyncAccountFromDb();
 
     // Use refs to track previous state to detect "off -> on" transitions
     const prevAutoRefreshRef = useRef(false);
@@ -20,7 +24,7 @@ function BackgroundTaskRunner() {
         // Check if we just turned it on
         if (auto_refresh && !prevAutoRefreshRef.current) {
             console.log('[BackgroundTask] Auto-refresh enabled, executing immediately...');
-            refreshAllQuotas();
+            refreshAllQuotasMutation.mutate();
         }
         prevAutoRefreshRef.current = auto_refresh;
 
@@ -28,7 +32,7 @@ function BackgroundTaskRunner() {
             console.log(`[BackgroundTask] Starting auto-refresh quota timer: ${refresh_interval} mins`);
             intervalId = setInterval(() => {
                 console.log('[BackgroundTask] Auto-refreshing all quotas...');
-                refreshAllQuotas();
+                refreshAllQuotasMutation.mutate();
             }, refresh_interval * 60 * 1000);
         }
 
@@ -38,7 +42,7 @@ function BackgroundTaskRunner() {
                 clearInterval(intervalId);
             }
         };
-    }, [config?.auto_refresh, config?.refresh_interval]);
+    }, [config?.auto_refresh, config?.refresh_interval, refreshAllQuotasMutation]);
 
     // Auto Sync Current Account Effect
     useEffect(() => {
@@ -46,20 +50,19 @@ function BackgroundTaskRunner() {
 
         let intervalId: ReturnType<typeof setTimeout> | null = null;
         const { auto_sync, sync_interval } = config;
-        const { syncAccountFromDb } = useAccountStore.getState();
 
         // Check if we just turned it on
         if (auto_sync && !prevAutoSyncRef.current) {
             console.log('[BackgroundTask] Auto-sync enabled, executing immediately...');
-            syncAccountFromDb();
+            syncAccountMutation.mutate();
         }
         prevAutoSyncRef.current = auto_sync;
 
         if (auto_sync && sync_interval > 0) {
             console.log(`[BackgroundTask] Starting auto-sync account timer: ${sync_interval} seconds`);
             intervalId = setInterval(() => {
-                console.log('[BackgroundTask] Auto-syncing current account from DB...');
-                syncAccountFromDb();
+                console.log('[BackgroundTask] Auto-syncing account from DB...');
+                syncAccountMutation.mutate();
             }, sync_interval * 1000);
         }
 
@@ -69,9 +72,8 @@ function BackgroundTaskRunner() {
                 clearInterval(intervalId);
             }
         };
-    }, [config?.auto_sync, config?.sync_interval]);
+    }, [config?.auto_sync, config?.sync_interval, syncAccountMutation]);
 
-    // Render nothing
     return null;
 }
 

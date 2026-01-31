@@ -1,48 +1,63 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { save, open } from '@tauri-apps/plugin-dialog';
-import { request as invoke } from '../utils/request';
 import { join } from '@tauri-apps/api/path';
 import { Search, RefreshCw, Download, Upload, Trash2, LayoutGrid, List, Sparkles, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useAccountStore } from '../stores/useAccountStore';
-import { useConfigStore } from '../stores/useConfigStore';
-import AccountTable from '../components/accounts/AccountTable';
-import AccountGrid from '../components/accounts/AccountGrid';
-import DeviceFingerprintDialog from '../components/accounts/DeviceFingerprintDialog';
-import AccountDetailsDialog from '../components/accounts/AccountDetailsDialog';
-import AddAccountDialog from '../components/accounts/AddAccountDialog';
-import ModalDialog from '../components/common/ModalDialog';
-import Pagination from '../components/common/Pagination';
-import { showToast } from '../components/common/ToastContainer';
-import { Account } from '../types/account';
-import { cn } from '../utils/cn';
-import { isTauri } from '../utils/env';
+import { useTranslation } from 'react-i18next';
 
-// ... (省略中间代码)
+// FSD imports
+import { invoke } from '@/shared/api';
+import { isTauri, cn } from '@/shared/lib';
+import { 
+  useAccounts, 
+  useCurrentAccount,
+  useAddAccount,
+  useSwitchAccount,
+  useDeleteAccount,
+  useDeleteAccounts,
+  useRefreshQuota,
+  useRefreshAllQuotas,
+  useToggleProxyStatus,
+  useReorderAccounts,
+  useWarmUpAccount,
+  useWarmUpAccounts
+} from '@/features/accounts';
+import type { Account } from '@/entities/account';
+import { useConfigStore } from '@/stores/useConfigStore';
 
+// Components
+import AccountTable from '@/components/accounts/AccountTable';
+import AccountGrid from '@/components/accounts/AccountGrid';
+import DeviceFingerprintDialog from '@/components/accounts/DeviceFingerprintDialog';
+import AccountDetailsDialog from '@/components/accounts/AccountDetailsDialog';
+import AddAccountDialog from '@/components/accounts/AddAccountDialog';
+import ModalDialog from '@/components/common/ModalDialog';
+import Pagination from '@/components/common/Pagination';
+import { showToast } from '@/components/common/ToastContainer';
 
 type FilterType = 'all' | 'pro' | 'ultra' | 'free';
 type ViewMode = 'list' | 'grid';
 
-import { useTranslation } from 'react-i18next';
-
 function Accounts() {
     const { t } = useTranslation();
-    const {
-        accounts,
-        currentAccount,
-        fetchAccounts,
-        addAccount,
-        deleteAccount,
-        deleteAccounts,
-        switchAccount,
-        loading,
-        refreshQuota,
-        toggleProxyStatus,
-        reorderAccounts,
-        warmUpAccounts,
-        warmUpAccount,
-    } = useAccountStore();
+    
+    // FSD Queries
+    const { data: accounts = [], isLoading: loading, refetch: fetchAccounts } = useAccounts();
+    const { data: currentAccount } = useCurrentAccount();
+    
+    // FSD Mutations
+    const addAccountMutation = useAddAccount();
+    const deleteAccountMutation = useDeleteAccount();
+    const deleteAccountsMutation = useDeleteAccounts();
+    const switchAccountMutation = useSwitchAccount();
+    const refreshQuotaMutation = useRefreshQuota();
+    const refreshAllQuotasMutation = useRefreshAllQuotas();
+    const toggleProxyMutation = useToggleProxyStatus();
+    const reorderMutation = useReorderAccounts();
+    const warmUpAccountMutation = useWarmUpAccount();
+    const warmUpAllMutation = useWarmUpAccounts();
+    
+    // Config store (keep for now - will be migrated later)
     const { config } = useConfigStore();
 
     // Extract selected accounts for proxy (scheduling mode) - only if badge is enabled
@@ -87,8 +102,8 @@ function Accounts() {
             return next;
         });
         try {
-            const msg = await warmUpAccount(accountId);
-            showToast(msg, 'success');
+            const msg = await warmUpAccountMutation.mutateAsync(accountId);
+            showToast(msg || t('accounts.warmup_triggered'), 'success');
         } catch (error) {
             showToast(`${t('common.error')}: ${error}`, 'error');
         } finally {
@@ -98,7 +113,7 @@ function Accounts() {
                 return next;
             });
         }
-    }, [warmUpAccount, t]);
+    }, [warmUpAccountMutation, t]);
 
     const handleWarmupAll = async () => {
         setIsWarmupConfirmOpen(false);
@@ -108,22 +123,21 @@ function Accounts() {
             if (isBatch) {
                 const ids = Array.from(selectedIds);
                 setRefreshingIds(new Set(ids));
-                const results = await Promise.allSettled(ids.map(id => warmUpAccount(id)));
+                const results = await Promise.allSettled(ids.map(id => warmUpAccountMutation.mutateAsync(id)));
                 let successCount = 0;
                 results.forEach(r => { if (r.status === 'fulfilled') successCount++; });
                 showToast(t('accounts.warmup_batch_triggered', { count: successCount }), 'success');
             } else {
-                const msg = await warmUpAccounts();
+                const msg = await warmUpAllMutation.mutateAsync();
                 if (msg) {
                     showToast(msg, 'success');
                 } else {
-                    showToast(t('accounts.warmup_all_triggered', '全量预热任务已触发'), 'success');
+                    showToast(t('accounts.warmup_all_triggered', 'Warmup triggered for all accounts'), 'success');
                 }
             }
         } catch (error) {
             showToast(`${t('common.error')}: ${error}`, 'error');
         } finally {
-
             setRefreshingIds(new Set());
         }
     };
@@ -290,7 +304,7 @@ function Accounts() {
     }, [paginatedAccounts]);
 
     const handleAddAccount = async (email: string, refreshToken: string) => {
-        await addAccount(email, refreshToken);
+        await addAccountMutation.mutateAsync({ email, refreshToken });
     };
 
     const [switchingAccountId, setSwitchingAccountId] = useState<string | null>(null);
@@ -301,18 +315,17 @@ function Accounts() {
         setSwitchingAccountId(accountId);
         console.log('[Accounts] handleSwitch called for:', accountId);
         try {
-            await switchAccount(accountId);
+            await switchAccountMutation.mutateAsync(accountId);
             showToast(t('common.success'), 'success');
         } catch (error) {
             console.error('[Accounts] Switch failed:', error);
             showToast(`${t('common.error')}: ${error}`, 'error');
         } finally {
-            // Add a small delay for smoother UX
             setTimeout(() => {
                 setSwitchingAccountId(null);
             }, 500);
         }
-    }, [loading, switchingAccountId, switchAccount, t]);
+    }, [loading, switchingAccountId, switchAccountMutation, t]);
 
     const handleRefresh = useCallback(async (accountId: string) => {
         setRefreshingIds(prev => {
@@ -321,9 +334,7 @@ function Accounts() {
             return next;
         });
         try {
-            await refreshQuota(accountId);
-            await refreshQuota(accountId);
-            await refreshQuota(accountId);
+            await refreshQuotaMutation.mutateAsync(accountId);
             showToast(t('common.success'), 'success');
         } catch (error) {
             showToast(`${t('common.error')}: ${error}`, 'error');
@@ -334,7 +345,7 @@ function Accounts() {
                 return next;
             });
         }
-    }, [refreshQuota, t]);
+    }, [refreshQuotaMutation, t]);
 
     const handleBatchDelete = () => {
         if (selectedIds.size === 0) return;
@@ -346,7 +357,7 @@ function Accounts() {
         try {
             const ids = Array.from(selectedIds);
             console.log('[Accounts] Batch deleting:', ids);
-            await deleteAccounts(ids);
+            await deleteAccountsMutation.mutateAsync(ids);
             setSelectedIds(new Set());
             console.log('[Accounts] Batch delete success');
             showToast(t('common.success'), 'success');
@@ -366,7 +377,7 @@ function Accounts() {
 
         try {
             console.log('[Accounts] Executing delete for:', deleteConfirmId);
-            await deleteAccount(deleteConfirmId);
+            await deleteAccountMutation.mutateAsync(deleteConfirmId);
             console.log('[Accounts] Delete success');
             showToast(t('common.success'), 'success');
         } catch (error) {
@@ -385,11 +396,11 @@ function Accounts() {
         if (!toggleProxyConfirm) return;
 
         try {
-            await toggleProxyStatus(
-                toggleProxyConfirm.accountId,
-                toggleProxyConfirm.enable,
-                toggleProxyConfirm.enable ? undefined : t('accounts.proxy_disabled_reason_manual')
-            );
+            await toggleProxyMutation.mutateAsync({
+                accountId: toggleProxyConfirm.accountId,
+                enable: toggleProxyConfirm.enable,
+                reason: toggleProxyConfirm.enable ? undefined : t('accounts.proxy_disabled_reason_manual')
+            });
             showToast(t('common.success'), 'success');
         } catch (error) {
             console.error('[Accounts] Toggle proxy status failed:', error);
@@ -418,11 +429,11 @@ function Accounts() {
             const details: string[] = [];
 
             if (isBatch) {
-                // 批量刷新选中
+                // Batch refresh selected
                 const ids = Array.from(selectedIds);
                 setRefreshingIds(new Set(ids));
 
-                const results = await Promise.allSettled(ids.map(id => refreshQuota(id)));
+                const results = await Promise.allSettled(ids.map(id => refreshQuotaMutation.mutateAsync(id)));
 
                 results.forEach((result, index) => {
                     const id = ids[index];
@@ -435,9 +446,9 @@ function Accounts() {
                     }
                 });
             } else {
-                // 刷新所有
+                // Refresh all
                 setRefreshingIds(new Set(accounts.map(a => a.id)));
-                const stats = await useAccountStore.getState().refreshAllQuotas();
+                const stats = await refreshAllQuotasMutation.mutateAsync();
                 if (stats) {
                     successCount = stats.success;
                     failedCount = stats.failed;
@@ -449,8 +460,6 @@ function Accounts() {
                 showToast(t('accounts.refresh_selected', { count: successCount }), 'success');
             } else {
                 showToast(`${t('common.success')}: ${successCount}, ${t('common.error')}: ${failedCount}`, 'warning');
-                // You might want to show details in a different way, but for toast, keep it simple or use a "view details" action if supported. 
-                // For now, simpler toast is better than a huge alert.
                 if (details.length > 0) {
                     console.warn('Refresh failures:', details);
                 }
@@ -458,7 +467,6 @@ function Accounts() {
         } catch (error) {
             showToast(`${t('common.error')}: ${error}`, 'error');
         } finally {
-
             setRefreshingIds(new Set());
         }
     };
@@ -577,7 +585,7 @@ function Accounts() {
 
         for (const entry of validEntries) {
             try {
-                await addAccount(entry.email || '', entry.refresh_token!);
+                await addAccountMutation.mutateAsync({ email: entry.email || '', refreshToken: entry.refresh_token! });
                 successCount++;
             } catch (error) {
                 console.error('Import account failed:', error);
@@ -824,6 +832,7 @@ function Accounts() {
                             <div className="p-2 space-y-1">
                                 <AccountTable
                                     accounts={paginatedAccounts}
+                                    allAccounts={accounts}
                                     selectedIds={selectedIds}
                                     refreshingIds={refreshingIds}
                                     proxySelectedAccountIds={proxySelectedAccountIds}
@@ -838,7 +847,7 @@ function Accounts() {
                                     onExport={handleExportOne}
                                     onDelete={handleDelete}
                                     onToggleProxy={(id: string) => handleToggleProxy(id, !!accounts.find(a => a.id === id)?.proxy_disabled)}
-                                    onReorder={reorderAccounts}
+                                    onReorder={(ids) => reorderMutation.mutate(ids)}
                                     onWarmup={handleWarmup}
                                 />
                             </div>

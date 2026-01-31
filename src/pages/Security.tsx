@@ -17,9 +17,17 @@ import {
   Hash,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
-import { showToast } from '../components/common/ToastContainer';
-import { AddIpDialog } from '../components/security/AddIpDialog';
+import { formatDistanceToNow } from 'date-fns';
+
+// FSD imports
+import { invoke } from '@/shared/api';
+import { cn } from '@/shared/lib';
+
+// Components
+import { showToast } from '@/components/common/ToastContainer';
+import { AddIpDialog } from '@/components/security/AddIpDialog';
+
+// Types
 import {
   IpBlacklistEntry,
   IpWhitelistEntry,
@@ -29,9 +37,7 @@ import {
   SecurityTab,
   AddToBlacklistRequest,
   AddToWhitelistRequest,
-} from '../types/security';
-import { formatDistanceToNow } from 'date-fns';
-import { cn } from '../lib/utils';
+} from '@/types/security';
 
 export const Security: React.FC = () => {
   const { t } = useTranslation();

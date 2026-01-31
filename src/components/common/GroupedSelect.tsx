@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
-import { cn } from '../../utils/cn';
+import { cn } from '@/shared/lib';
 
 export interface SelectOption {
     value: string;

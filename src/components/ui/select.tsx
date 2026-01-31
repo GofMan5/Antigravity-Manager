@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "../../lib/utils"
+import { cn } from "@/shared/lib"
 import { ChevronDown, Check } from "lucide-react"
 
 // Context to share state between Select components

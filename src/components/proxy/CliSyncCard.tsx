@@ -15,10 +15,10 @@ import {
     X
 } from 'lucide-react';
 import { copyToClipboard } from '../../utils/clipboard';
-import { request as invoke } from '../../utils/request';
+import { invoke } from '@/shared/api';
 import { showToast } from '../common/ToastContainer';
 import ModalDialog from '../common/ModalDialog';
-import { cn } from '../../utils/cn';
+import { cn } from '@/shared/lib';
 
 interface CliSyncCardProps {
     proxyUrl: string;

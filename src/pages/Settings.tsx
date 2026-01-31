@@ -17,24 +17,26 @@ import {
   Bug
 } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
-import { request as invoke } from '../utils/request';
-import { useConfigStore } from '../stores/useConfigStore';
-import { useDebugConsole } from '../stores/useDebugConsole';
-import { AppConfig } from '../types/config';
-import { showToast } from '../components/common/ToastContainer';
-import QuotaProtection from '../components/settings/QuotaProtection';
-import SmartWarmup from '../components/settings/SmartWarmup';
-import PinnedQuotaModels from '../components/settings/PinnedQuotaModels';
 import { getVersion } from '@tauri-apps/api/app';
-
 import { useTranslation } from 'react-i18next';
-import { isTauri } from '../utils/env';
-import { cn } from '../lib/utils';
-import { Button } from '../components/ui/button';
-import { Switch } from '../components/ui/switch';
-import { Label } from '../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Input } from '../components/ui/input';
+
+// FSD imports
+import { invoke } from '@/shared/api';
+import { isTauri, cn } from '@/shared/lib';
+import { useConfigStore } from '@/stores/useConfigStore';
+import { useDebugConsole } from '@/stores/useDebugConsole';
+import type { AppConfig } from '@/entities/config';
+
+// Components
+import { showToast } from '@/components/common/ToastContainer';
+import QuotaProtection from '@/components/settings/QuotaProtection';
+import SmartWarmup from '@/components/settings/SmartWarmup';
+import PinnedQuotaModels from '@/components/settings/PinnedQuotaModels';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 
 // --- Premium UI Components ---
 

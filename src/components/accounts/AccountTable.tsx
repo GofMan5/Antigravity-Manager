@@ -30,9 +30,9 @@ import {
     ToggleRight,
     Sparkles,
 } from 'lucide-react';
-import { Account } from '../../types/account';
+import { Account } from '@/entities/account';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../utils/cn';
+import { cn } from '@/shared/lib';
 import { getQuotaColor, formatTimeRemaining, getTimeRemainingColor } from '../../utils/format';
 import { useConfigStore } from '../../stores/useConfigStore';
 
@@ -55,6 +55,7 @@ function getModelLabel(id: string): string {
 // ===================================
 interface AccountTableProps {
     accounts: Account[];
+    allAccounts?: Account[]; // Full list for reorder (when paginated)
     selectedIds: Set<string>;
     refreshingIds: Set<string>;
     proxySelectedAccountIds?: Set<string>;
@@ -295,7 +296,7 @@ const restrictToVerticalAxis = ({ transform }: { transform: any }) => {
 };
 
 const AccountTable = memo(function AccountTable({
-    accounts, selectedIds, refreshingIds, proxySelectedAccountIds, onToggleSelect, onToggleAll,
+    accounts, allAccounts, selectedIds, refreshingIds, proxySelectedAccountIds, onToggleSelect, onToggleAll,
     currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDevice,
     onViewDetails, onExport, onDelete, onToggleProxy, onReorder, onWarmup
 }: AccountTableProps) {
@@ -314,7 +315,9 @@ const AccountTable = memo(function AccountTable({
         })
     );
 
+    // Use displayed accounts for rendering, but full list for reorder calculation
     const accountIds = useMemo(() => accounts.map(a => a.id), [accounts]);
+    const fullAccountIds = useMemo(() => (allAccounts || accounts).map(a => a.id), [allAccounts, accounts]);
     const activeAccount = useMemo(() => accounts.find(a => a.id === activeId), [accounts, activeId]);
 
     const handleDragStart = (event: DragStartEvent) => {
@@ -332,9 +335,16 @@ const AccountTable = memo(function AccountTable({
         setDraggedWidth(undefined);
 
         if (over && active.id !== over.id && onReorder) {
-            const oldIndex = accountIds.indexOf(active.id as string);
-            const newIndex = accountIds.indexOf(over.id as string);
-            onReorder(arrayMove(accountIds, oldIndex, newIndex));
+            // Calculate reorder within the full list, not just current page
+            const activeIdStr = active.id as string;
+            const overIdStr = over.id as string;
+            
+            const oldIndex = fullAccountIds.indexOf(activeIdStr);
+            const newIndex = fullAccountIds.indexOf(overIdStr);
+            
+            if (oldIndex !== -1 && newIndex !== -1) {
+                onReorder(arrayMove(fullAccountIds, oldIndex, newIndex));
+            }
         }
     };
 

@@ -2,14 +2,13 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import ModalDialog from '../common/ModalDialog';
 import { useTranslation } from 'react-i18next';
-import { request as invoke } from '../../utils/request';
+import { invoke } from '@/shared/api';
 import { Trash2, Search, X, Copy, CheckCircle, ChevronLeft, ChevronRight, RefreshCw, User } from 'lucide-react';
 
-import { AppConfig } from '../../types/config';
-import { formatCompactNumber } from '../../utils/format';
-import { useAccountStore } from '../../stores/useAccountStore';
-import { isTauri } from '../../utils/env';
-import { copyToClipboard } from '../../utils/clipboard';
+import { AppConfig } from '@/entities/config';
+import { formatCompactNumber } from '@/shared/lib';
+import { useAccounts } from '@/features/accounts';
+import { isTauri, copyToClipboard } from '@/shared/lib';
 
 
 interface ProxyRequestLog {
@@ -149,7 +148,8 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
     const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
     const [copiedRequestId, setCopiedRequestId] = useState<string | null>(null);
 
-    const { accounts, fetchAccounts } = useAccountStore();
+    // FSD hook
+    const { data: accounts = [], refetch: fetchAccounts } = useAccounts();
 
     // Pagination state
     const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];

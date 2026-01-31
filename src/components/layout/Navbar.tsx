@@ -13,9 +13,9 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '../../stores/useConfigStore';
-import { isLinux } from '../../utils/env';
+import { isLinux } from '@/shared/lib';
 import { memo, useCallback, useState, useEffect, useRef } from 'react';
-import { cn } from '../../lib/utils';
+import { cn } from '@/shared/lib';
 import { getVersion } from '@tauri-apps/api/app';
 
 const Navbar = function Navbar() {

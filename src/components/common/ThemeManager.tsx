@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useConfigStore } from '../../stores/useConfigStore';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-import { isLinux } from '../../utils/env';
+import { isLinux } from '@/shared/lib';
 
 export default function ThemeManager() {
     const { config, loadConfig } = useConfigStore();

@@ -65,13 +65,15 @@ pub fn extract_client_ip(req: &Request<Body>, connect_info: Option<&ConnectInfo<
 }
 
 /// IP filter middleware
+/// Note: ConnectInfo may not be available when using manual hyper server,
+/// so we make it optional and fall back to header-based IP extraction.
 pub async fn ip_filter_middleware(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     security_state: axum::extract::Extension<SecurityState>,
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    let client_ip = extract_client_ip(&req, Some(&ConnectInfo(addr)));
+    let client_ip = extract_client_ip(&req, connect_info.as_ref());
     let path = req.uri().path().to_string();
     let method = req.method().to_string();
 

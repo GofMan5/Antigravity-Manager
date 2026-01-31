@@ -1,9 +1,19 @@
 import { createPortal } from 'react-dom';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Wand2, RotateCcw, FolderOpen, Trash2, X } from 'lucide-react';
-import { Account, DeviceProfile, DeviceProfileVersion } from '../../types/account';
-import * as accountService from '../../services/accountService';
 import { useTranslation } from 'react-i18next';
+
+// FSD imports
+import { invoke } from '@/shared/api';
+import { 
+    useDeviceProfiles,
+    usePreviewGenerateProfile,
+    useBindDeviceProfileWithProfile,
+    useRestoreOriginalDevice,
+    useRestoreDeviceVersion,
+    useDeleteDeviceVersion
+} from '@/features/accounts';
+import type { Account, DeviceProfile } from '@/entities/account';
 
 interface DeviceFingerprintDialogProps {
     account: Account | null;
@@ -12,41 +22,24 @@ interface DeviceFingerprintDialogProps {
 
 export default function DeviceFingerprintDialog({ account, onClose }: DeviceFingerprintDialogProps) {
     const { t } = useTranslation();
-    const [deviceProfiles, setDeviceProfiles] = useState<{ current_storage?: DeviceProfile; history?: DeviceProfileVersion[]; baseline?: DeviceProfile } | null>(null);
-    const [loadingDevice, setLoadingDevice] = useState(false);
+    
+    // FSD queries and mutations
+    const { data: deviceProfiles, isLoading: loadingDevice, refetch: refetchDevice } = useDeviceProfiles(account?.id || '');
+    const previewMutation = usePreviewGenerateProfile();
+    const bindMutation = useBindDeviceProfileWithProfile();
+    const restoreOriginalMutation = useRestoreOriginalDevice();
+    const restoreVersionMutation = useRestoreDeviceVersion();
+    const deleteVersionMutation = useDeleteDeviceVersion();
+    
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [actionMessage, setActionMessage] = useState<string | null>(null);
     const [confirmProfile, setConfirmProfile] = useState<DeviceProfile | null>(null);
     const [confirmType, setConfirmType] = useState<'generate' | 'restoreOriginal' | null>(null);
 
-    const fetchDevice = async (target?: Account | null) => {
-        if (!target) {
-            setDeviceProfiles(null);
-            return;
-        }
-        setLoadingDevice(true);
-        try {
-            const res = await accountService.getDeviceProfiles(target.id);
-            setDeviceProfiles(res);
-        } catch (e: any) {
-            const errorMsg = typeof e === 'string' ? e : e.message || '';
-            const translated = errorMsg === 'storage_json_not_found'
-                ? t('accounts.device_fingerprint_dialog.storage_json_not_found')
-                : (typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.failed_to_load_device_info'));
-            setActionMessage(translated);
-        } finally {
-            setLoadingDevice(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchDevice(account);
-    }, [account]);
-
     const handleGeneratePreview = async () => {
         setActionLoading('preview');
         try {
-            const profile = await accountService.previewGenerateProfile();
+            const profile = await previewMutation.mutateAsync();
             setConfirmProfile(profile);
             setConfirmType('generate');
         } catch (e: any) {
@@ -60,11 +53,11 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
         if (!account || !confirmProfile) return;
         setActionLoading('generate');
         try {
-            await accountService.bindDeviceProfileWithProfile(account.id, confirmProfile);
+            await bindMutation.mutateAsync({ accountId: account.id, profile: confirmProfile });
             setActionMessage(t('accounts.device_fingerprint_dialog.generated_and_bound'));
             setConfirmProfile(null);
             setConfirmType(null);
-            await fetchDevice(account); // Refresh history
+            refetchDevice();
         } catch (e: any) {
             setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.binding_failed'));
         } finally {
@@ -85,11 +78,11 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
         if (!account) return;
         setActionLoading('restore');
         try {
-            const msg = await accountService.restoreOriginalDevice();
+            const msg = await restoreOriginalMutation.mutateAsync();
             setActionMessage(msg || t('accounts.device_fingerprint_dialog.restored'));
             setConfirmProfile(null);
             setConfirmType(null);
-            await fetchDevice(account);
+            refetchDevice();
         } catch (e: any) {
             setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.restoration_failed'));
         } finally {
@@ -101,9 +94,9 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
         if (!account) return;
         setActionLoading(`restore-${versionId}`);
         try {
-            await accountService.restoreDeviceVersion(account.id, versionId);
+            await restoreVersionMutation.mutateAsync({ accountId: account.id, versionId });
             setActionMessage(t('accounts.device_fingerprint_dialog.restored'));
-            await fetchDevice(account);
+            refetchDevice();
         } catch (e: any) {
             setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.restoration_failed'));
         } finally {
@@ -115,9 +108,9 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
         if (!account || isCurrent) return;
         setActionLoading(`delete-${versionId}`);
         try {
-            await accountService.deleteDeviceVersion(account.id, versionId);
+            await deleteVersionMutation.mutateAsync({ accountId: account.id, versionId });
             setActionMessage(t('accounts.device_fingerprint_dialog.deleted'));
-            await fetchDevice(account);
+            refetchDevice();
         } catch (e: any) {
             setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.deletion_failed'));
         } finally {
@@ -128,7 +121,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
     const handleOpenFolder = async () => {
         setActionLoading('open-folder');
         try {
-            await accountService.openDeviceFolder();
+            await invoke<void>('open_device_folder');
             setActionMessage(t('accounts.device_fingerprint_dialog.directory_opened'));
         } catch (e: any) {
             setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.directory_open_failed'));

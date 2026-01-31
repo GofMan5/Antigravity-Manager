@@ -1,5 +1,5 @@
 import React from 'react';
-import { ProxyMonitor } from '../components/proxy/ProxyMonitor';
+import { ProxyMonitor } from '@/components/proxy/ProxyMonitor';
 
 const Monitor: React.FC = () => {
     return (

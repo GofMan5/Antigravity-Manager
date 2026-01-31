@@ -1,6 +1,6 @@
 import { X, Clock, AlertCircle } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { Account, ModelQuota } from '../../types/account';
+import { Account, ModelQuota } from '@/entities/account';
 import { formatDate } from '../../utils/format';
 import { useTranslation } from 'react-i18next';
 

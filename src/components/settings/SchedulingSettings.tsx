@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAccountStore } from '../../stores/useAccountStore';
-import { StickySessionConfig, SchedulingMode } from '../../types/config';
 import { Clock, Users, ArrowRightLeft, Target, Check, Search, ChevronDown, ChevronUp } from 'lucide-react';
-import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// FSD imports
+import { cn } from '@/shared/lib';
+import { useAccounts } from '@/features/accounts';
+import type { StickySessionConfig, SchedulingMode } from '@/entities/config';
 
 interface SchedulingSettingsProps {
     config?: StickySessionConfig;
@@ -13,7 +15,7 @@ interface SchedulingSettingsProps {
 
 const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChange }) => {
     const { t } = useTranslation();
-    const { accounts, fetchAccounts } = useAccountStore();
+    const { data: accounts = [], refetch: fetchAccounts } = useAccounts();
     
     useEffect(() => {
         if (accounts.length === 0) fetchAccounts();

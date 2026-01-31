@@ -1,7 +1,7 @@
 import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, ToggleLeft, ToggleRight, Fingerprint, CheckCircle2 } from 'lucide-react';
-import { Account } from '../../types/account';
+import { Account } from '@/entities/account';
 import { getQuotaColor, formatTimeRemaining, getTimeRemainingColor } from '../../utils/format';
-import { cn } from '../../utils/cn';
+import { cn } from '@/shared/lib';
 import { useTranslation } from 'react-i18next';
 
 interface AccountRowProps {
