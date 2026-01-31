@@ -8,6 +8,7 @@ interface AccountGridProps {
     accounts: Account[];
     selectedIds: Set<string>;
     refreshingIds: Set<string>;
+    proxySelectedAccountIds?: Set<string>;
     onToggleSelect: (id: string) => void;
     currentAccountId: string | null;
     switchingAccountId: string | null;
@@ -36,7 +37,7 @@ const item = {
     show: { opacity: 1, y: 0 }
 };
 
-const AccountGrid = memo(({ accounts, selectedIds, refreshingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy, onViewDevice, onWarmup }: AccountGridProps) => {
+const AccountGrid = memo(({ accounts, selectedIds, refreshingIds, proxySelectedAccountIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy, onViewDevice, onWarmup }: AccountGridProps) => {
     const { t } = useTranslation();
     if (accounts.length === 0) {
         return (
@@ -60,6 +61,7 @@ const AccountGrid = memo(({ accounts, selectedIds, refreshingIds, onToggleSelect
                         account={account}
                         selected={selectedIds.has(account.id)}
                         isRefreshing={refreshingIds.has(account.id)}
+                        isSelectedForProxy={proxySelectedAccountIds?.has(account.id) || false}
                         onSelect={() => onToggleSelect(account.id)}
                         isCurrent={account.id === currentAccountId}
                         isSwitching={account.id === switchingAccountId}

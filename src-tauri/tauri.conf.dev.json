@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Antigravity Tools",
+  "productName": "Antigravity Tools DEV",
   "version": "5.0.2",
-  "identifier": "com.lbjlaq.antigravity-tools",
+  "identifier": "com.lbjlaq.antigravity-tools-dev",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1421",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -13,7 +13,7 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "Antigravity Tools",
+        "title": "Antigravity Tools [DEV]",
         "width": 1024,
         "height": 700,
         "titleBarStyle": "Overlay",
@@ -42,17 +42,11 @@
   },
   "plugins": {
     "updater": {
-      "active": true,
-      "endpoints": [
-        "https://github.com/GofMan5/Antigravity-Manager/releases/latest/download/latest.json"
-      ],
-      "dialog": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVDMTQ4NzQwMjUyMjg0NUUKUldSZWhDSWxRSWNVWExVd05NSmE3MS9XT0txN2dBUnNpQUNiaVhIVWI5VHlqMVpIcHdnOE14OHUK"
+      "active": false
     },
     "process": null,
     "fs": null,
     "dialog": null,
-    "opener": null,
-    "single-instance": null
+    "opener": null
   }
 }

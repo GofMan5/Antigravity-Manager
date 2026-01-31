@@ -19,6 +19,7 @@ pub mod integration;
 pub mod account_service;
 pub mod http_api;
 pub mod cache; // [NEW] Antigravity cache clearing module
+pub mod log_bridge; // [NEW] Debug console log bridge
 
 use crate::models;
 

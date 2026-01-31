@@ -13,15 +13,30 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '../../stores/useConfigStore';
 import { isLinux } from '../../utils/env';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState, useEffect } from 'react';
 import { LanguageSelector } from './navbar/LanguageSelector';
 import { cn } from '../../lib/utils';
+import { getVersion } from '@tauri-apps/api/app';
+import DebugConsoleButton from '../debug/DebugConsoleButton';
+import { useDebugConsole } from '../../stores/useDebugConsole';
 
 const Navbar = function Navbar() {
     const location = useLocation();
     const navigate = useNavigate();
     const { t } = useTranslation();
     const { config, saveConfig } = useConfigStore();
+    const [appVersion, setAppVersion] = useState<string>('');
+
+    // Fetch app version from Tauri
+    useEffect(() => {
+        getVersion().then(setAppVersion).catch(() => setAppVersion(''));
+    }, []);
+
+    // Check debug console status on mount
+    const { checkEnabled } = useDebugConsole();
+    useEffect(() => {
+        checkEnabled();
+    }, [checkEnabled]);
 
     const navItems = [
         { path: '/', label: t('nav.dashboard'), icon: LayoutDashboard },
@@ -93,7 +108,7 @@ const Navbar = function Navbar() {
                         Antigravity
                     </span>
                     <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
-                        v0.0.1
+                        {appVersion ? `v${appVersion}` : ''}
                     </span>
                 </Link>
 
@@ -139,6 +154,8 @@ const Navbar = function Navbar() {
                     </div>
 
                     <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" /> {/* Divider */}
+
+                    <DebugConsoleButton />
 
                     <LanguageSelector />
 

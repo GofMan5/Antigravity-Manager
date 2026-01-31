@@ -128,12 +128,6 @@ pub async fn internal_start_proxy_service(
     let app_config = crate::modules::config::load_app_config().unwrap_or_else(|_| crate::models::AppConfig::new());
     token_manager.update_circuit_breaker_config(app_config.circuit_breaker).await;
 
-    // 🆕 [FIX #820] 恢复固定账号模式设置
-    if let Some(ref account_id) = config.preferred_account_id {
-        token_manager.set_preferred_account(Some(account_id.clone())).await;
-        tracing::info!("🔒 [FIX #820] Fixed account mode restored: {}", account_id);
-    }
-
     // 檢查並啟動管理服務器（如果尚未運行）
     ensure_admin_server(config.clone(), state, integration.clone(), cloudflared_state.clone()).await?;
 
@@ -646,55 +640,6 @@ pub async fn clear_proxy_session_bindings(
         Ok(())
     } else {
         Err("服务未运行".to_string())
-    }
-}
-
-// ===== [FIX #820] 固定账号模式命令 =====
-
-/// 设置优先使用的账号（固定账号模式）
-/// 传入 account_id 启用固定模式，传入 null/空字符串恢复轮询模式
-#[tauri::command]
-pub async fn set_preferred_account(
-    state: State<'_, ProxyServiceState>,
-    account_id: Option<String>,
-) -> Result<(), String> {
-    let instance_lock = state.instance.read().await;
-    if let Some(instance) = instance_lock.as_ref() {
-        // 过滤空字符串为 None
-        let cleaned_id = account_id.filter(|s| !s.trim().is_empty());
-
-        // 1. 更新内存状态
-        instance.token_manager.set_preferred_account(cleaned_id.clone()).await;
-
-        // 2. 持久化到配置文件 (修复 Issue #820 自动关闭问题)
-        let mut app_config = crate::modules::config::load_app_config()
-            .map_err(|e| format!("加载配置失败: {}", e))?;
-        app_config.proxy.preferred_account_id = cleaned_id.clone();
-        crate::modules::config::save_app_config(&app_config)
-            .map_err(|e| format!("保存配置失败: {}", e))?;
-
-        if let Some(ref id) = cleaned_id {
-            tracing::info!("🔒 [FIX #820] Fixed account mode enabled and persisted: {}", id);
-        } else {
-            tracing::info!("🔄 [FIX #820] Round-robin mode enabled and persisted");
-        }
-
-        Ok(())
-    } else {
-        Err("服务未运行".to_string())
-    }
-}
-
-/// 获取当前优先使用的账号ID
-#[tauri::command]
-pub async fn get_preferred_account(
-    state: State<'_, ProxyServiceState>,
-) -> Result<Option<String>, String> {
-    let instance_lock = state.instance.read().await;
-    if let Some(instance) = instance_lock.as_ref() {
-        Ok(instance.token_manager.get_preferred_account().await)
-    } else {
-        Ok(None)
     }
 }
 

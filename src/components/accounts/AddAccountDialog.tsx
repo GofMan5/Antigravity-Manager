@@ -1,6 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Database, Globe, FileClock, Loader2, CheckCircle2, XCircle, Copy, Check, Info, Link2 } from 'lucide-react';
+import { 
+    Plus, Database, Globe, Key, Loader2, CheckCircle2, XCircle, 
+    Copy, Check, Link2, Sparkles, Upload, FolderOpen, X
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAccountStore } from '../../stores/useAccountStore';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
@@ -8,6 +12,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { request as invoke } from '../../utils/request';
 import { isTauri } from '../../utils/env';
 import { copyToClipboard } from '../../utils/clipboard';
+import { cn } from '../../utils/cn';
 
 interface AddAccountDialogProps {
     onAdd: (email: string, refreshToken: string) => Promise<void>;
@@ -15,12 +20,59 @@ interface AddAccountDialogProps {
 }
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
+type TabType = 'oauth' | 'token' | 'import';
+
+// Tab configuration with icons and labels
+const TABS: { id: TabType; icon: typeof Globe; labelKey: string; recommended?: boolean }[] = [
+    { id: 'oauth', icon: Globe, labelKey: 'accounts.add.tabs.oauth', recommended: true },
+    { id: 'token', icon: Key, labelKey: 'accounts.add.tabs.token' },
+    { id: 'import', icon: Database, labelKey: 'accounts.add.tabs.import' },
+];
+
+// Status Alert Component
+const StatusAlert = memo(({ status, message }: { status: Status; message: string }) => {
+    if (status === 'idle' || !message) return null;
+
+    const config = {
+        loading: { 
+            bg: 'bg-blue-500/10 border-blue-500/30', 
+            text: 'text-blue-400',
+            icon: <Loader2 className="w-4 h-4 animate-spin" />
+        },
+        success: { 
+            bg: 'bg-emerald-500/10 border-emerald-500/30', 
+            text: 'text-emerald-400',
+            icon: <CheckCircle2 className="w-4 h-4" />
+        },
+        error: { 
+            bg: 'bg-red-500/10 border-red-500/30', 
+            text: 'text-red-400',
+            icon: <XCircle className="w-4 h-4" />
+        },
+    };
+
+    const { bg, text, icon } = config[status];
+
+    return (
+        <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className={cn("flex items-center gap-3 p-3 rounded-xl border text-sm", bg, text)}
+        >
+            {icon}
+            <span className="flex-1">{message}</span>
+        </motion.div>
+    );
+});
+
+StatusAlert.displayName = 'StatusAlert';
 
 function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
     const { t } = useTranslation();
     const fetchAccounts = useAccountStore(state => state.fetchAccounts);
     const [isOpen, setIsOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<'oauth' | 'token' | 'import'>(isTauri() ? 'oauth' : 'token');
+    const [activeTab, setActiveTab] = useState<TabType>(isTauri() ? 'oauth' : 'token');
     const [refreshToken, setRefreshToken] = useState('');
     const [oauthUrl, setOauthUrl] = useState('');
     const [oauthUrlCopied, setOauthUrlCopied] = useState(false);
@@ -59,18 +111,14 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
         const setupListener = async () => {
             unlisten = await listen('oauth-url-generated', (event) => {
                 setOauthUrl(event.payload as string);
-                // 自动复制到剪贴板? 可选，这里只设置状态让用户手动复制
             });
         };
 
         setupListener();
-
-        return () => {
-            if (unlisten) unlisten();
-        };
+        return () => { if (unlisten) unlisten(); };
     }, []);
 
-    // Listen for OAuth callback completion (user may open the URL manually without clicking Start)
+    // Listen for OAuth callback completion
     useEffect(() => {
         if (!isTauri()) return;
         let unlisten: (() => void) | undefined;
@@ -82,7 +130,6 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                 if (statusRef.current === 'loading' || statusRef.current === 'success') return;
                 if (!oauthUrlRef.current) return;
 
-                // Auto-complete: exchange code and save account (no browser open)
                 setStatus('loading');
                 setMessage(`${t('accounts.add.tabs.oauth')}...`);
 
@@ -96,11 +143,9 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                     }, 1500);
                 } catch (error) {
                     setStatus('error');
-                    let errorMsg = String(error);
+                    const errorMsg = String(error);
                     if (errorMsg.includes('Refresh Token') || errorMsg.includes('refresh_token')) {
                         setMessage(errorMsg);
-                    } else if (errorMsg.includes('Tauri') || errorMsg.toLowerCase().includes('environment') || errorMsg.includes('环境')) {
-                        setMessage(t('common.environment_error', { error: errorMsg }));
                     } else {
                         setMessage(`${t('accounts.add.tabs.oauth')} ${t('common.error')}: ${errorMsg}`);
                     }
@@ -109,38 +154,28 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
         };
 
         setupListener();
-
-        return () => {
-            if (unlisten) unlisten();
-        };
+        return () => { if (unlisten) unlisten(); };
     }, [completeOAuthLogin, t]);
 
-    // Pre-generate OAuth URL when dialog opens on OAuth tab (so URL is shown BEFORE "Start OAuth")
+    // Pre-generate OAuth URL
     useEffect(() => {
-        if (!isOpen) return;
-        if (activeTab !== 'oauth') return;
-        if (oauthUrl) return;
+        if (!isOpen || activeTab !== 'oauth' || oauthUrl) return;
 
         invoke<any>('prepare_oauth_url')
             .then((res) => {
                 const url = typeof res === 'string' ? res : res?.url;
                 if (url && url.length > 0) setOauthUrl(url);
             })
-            .catch((e) => {
-                console.error('Failed to prepare OAuth URL:', e);
-            });
+            .catch(console.error);
     }, [isOpen, activeTab, oauthUrl]);
 
-    // If user navigates away from OAuth tab, cancel prepared flow to release the port.
+    // Cancel OAuth when leaving tab
     useEffect(() => {
-        if (!isOpen) return;
-        if (activeTab === 'oauth') return;
-        if (!oauthUrl) return;
-
-        cancelOAuthLogin().catch(() => { });
+        if (!isOpen || activeTab === 'oauth' || !oauthUrl) return;
+        cancelOAuthLogin().catch(() => {});
         setOauthUrl('');
         setOauthUrlCopied(false);
-    }, [isOpen, activeTab]);
+    }, [isOpen, activeTab, cancelOAuthLogin, oauthUrl]);
 
     const resetState = () => {
         setStatus('idle');
@@ -148,6 +183,7 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
         setRefreshToken('');
         setOauthUrl('');
         setOauthUrlCopied(false);
+        setManualCode('');
     };
 
     const handleAction = async (
@@ -157,33 +193,22 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
     ) => {
         setStatus('loading');
         setMessage(`${actionName}...`);
-        if (options?.clearOauthUrl !== false) {
-            setOauthUrl(''); // Clear previous URL
-        }
+        if (options?.clearOauthUrl !== false) setOauthUrl('');
+        
         try {
             await actionFn();
             setStatus('success');
             setMessage(`${actionName} ${t('common.success')}!`);
-
-            // 延迟关闭,让用户看到成功状态
             setTimeout(() => {
                 setIsOpen(false);
                 resetState();
             }, 1500);
         } catch (error) {
             setStatus('error');
-
-            // 改进错误信息显示
-            let errorMsg = String(error);
-
-            // 如果是 refresh_token 缺失错误,显示完整信息(包含解决方案)
+            const errorMsg = String(error);
             if (errorMsg.includes('Refresh Token') || errorMsg.includes('refresh_token')) {
                 setMessage(errorMsg);
-            } else if (errorMsg.includes('Tauri') || errorMsg.toLowerCase().includes('environment') || errorMsg.includes('环境')) {
-                // 环境错误
-                setMessage(t('common.environment_error', { error: errorMsg }));
             } else {
-                // 其他错误
                 setMessage(`${actionName} ${t('common.error')}: ${errorMsg}`);
             }
         }
@@ -197,13 +222,11 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
         }
 
         setStatus('loading');
-
-        // 1. 尝试解析输入
-        let tokens: string[] = [];
         const input = refreshToken.trim();
+        let tokens: string[] = [];
 
+        // Parse JSON or regex
         try {
-            // 尝试解析为 JSON
             if (input.startsWith('[') && input.endsWith(']')) {
                 const parsed = JSON.parse(input);
                 if (Array.isArray(parsed)) {
@@ -213,48 +236,36 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                 }
             }
         } catch (e) {
-            // JSON 解析失败,忽略
-            console.debug('JSON parse failed, falling back to regex', e);
+            console.debug('JSON parse failed, falling back to regex');
         }
 
-        // 2. 如果 JSON 解析没有结果,尝试正则提取 (或者输入不是 JSON)
         if (tokens.length === 0) {
-            const regex = /1\/\/[a-zA-Z0-9_\-]+/g;
-            const matches = input.match(regex);
-            if (matches) {
-                tokens = matches;
-            }
+            const matches = input.match(/1\/\/[a-zA-Z0-9_\-]+/g);
+            if (matches) tokens = matches;
         }
 
-        // 去重
         tokens = [...new Set(tokens)];
 
         if (tokens.length === 0) {
             setStatus('error');
-            setMessage(t('accounts.add.token.error_token')); // 或者提示"未找到有效 Token"
+            setMessage(t('accounts.add.token.error_token'));
             return;
         }
 
-        // 3. 批量添加
         let successCount = 0;
         let failCount = 0;
 
         for (let i = 0; i < tokens.length; i++) {
-            const currentToken = tokens[i];
             setMessage(t('accounts.add.token.batch_progress', { current: i + 1, total: tokens.length }));
-
             try {
-                await onAdd("", currentToken);
+                await onAdd("", tokens[i]);
                 successCount++;
-            } catch (error) {
-                console.error(`Failed to add token ${i + 1}:`, error);
+            } catch {
                 failCount++;
             }
-            // 稍微延迟一下,避免太快
             await new Promise(r => setTimeout(r, 100));
         }
 
-        // 4. 结果反馈
         if (successCount === tokens.length) {
             setStatus('success');
             setMessage(t('accounts.add.token.batch_success', { count: successCount }));
@@ -263,12 +274,9 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                 resetState();
             }, 1500);
         } else if (successCount > 0) {
-            // 部分成功
-            setStatus('success'); // 还是用绿色,但提示部分失败
+            setStatus('success');
             setMessage(t('accounts.add.token.batch_partial', { success: successCount, fail: failCount }));
-            // 不自动关闭,让用户看到结果
         } else {
-            // 全部失败
             setStatus('error');
             setMessage(t('accounts.add.token.batch_fail'));
         }
@@ -279,17 +287,11 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
             setStatus('loading');
             setMessage(t('accounts.add.oauth.btn_start') + '...');
 
-            // 1. 获取 URL (指向 /auth/callback)
             const res = await invoke<any>('prepare_oauth_url');
             const url = typeof res === 'string' ? res : res.url;
+            if (!url) throw new Error('Could not obtain OAuth URL');
 
-            if (!url) {
-                throw new Error('Could not obtain OAuth URL');
-            }
-
-            setOauthUrl(url); // 确保链接在 UI 中可见，方便用户手动复制
-
-            // 2. 打开新标签页 (响应用户反馈：Web 端直接使用新标签体验更好)
+            setOauthUrl(url);
             const popup = window.open(url, '_blank');
 
             if (!popup) {
@@ -298,19 +300,13 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                 return;
             }
 
-            // 3. 监听消息
             const handleMessage = async (event: MessageEvent) => {
-                // 安全检查: 如果定义了 ORIGIN 校验更好，这里暂时检查 data type
                 if (event.data?.type === 'oauth-success') {
                     popup.close();
                     window.removeEventListener('message', handleMessage);
-
-                    // 4. 成功后刷新列表
                     await fetchAccounts();
-
                     setStatus('success');
                     setMessage(t('accounts.add.oauth_success') || t('common.success'));
-
                     setTimeout(() => {
                         setIsOpen(false);
                         resetState();
@@ -320,20 +316,17 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
 
             window.addEventListener('message', handleMessage);
 
-            // 5. 检测窗口关闭 (用户手动关闭)
             const timer = setInterval(() => {
                 if (popup.closed) {
                     clearInterval(timer);
                     window.removeEventListener('message', handleMessage);
-                    if (statusRef.current === 'loading') { // 如果还在 loading 状态就关闭了，说明取消了
+                    if (statusRef.current === 'loading') {
                         setStatus('idle');
                         setMessage('');
                     }
                 }
             }, 1000);
-
         } catch (error) {
-            console.error('OAuth Web Error:', error);
             setStatus('error');
             setMessage(`${t('common.error')}: ${error}`);
         }
@@ -344,13 +337,10 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
             handleOAuthWeb();
             return;
         }
-        // Default flow: opens the default browser and completes automatically.
-        // (If user opened the URL manually, completion is also triggered by oauth-callback-received.)
         handleAction(t('accounts.add.tabs.oauth'), startOAuthLogin, { clearOauthUrl: false });
     };
 
     const handleCompleteOAuth = () => {
-        // Manual flow: user already authorized in their preferred browser, just finish the flow.
         handleAction(t('accounts.add.tabs.oauth'), completeOAuthLogin, { clearOauthUrl: false });
     };
 
@@ -359,7 +349,7 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
             const success = await copyToClipboard(oauthUrl);
             if (success) {
                 setOauthUrlCopied(true);
-                window.setTimeout(() => setOauthUrlCopied(false), 1500);
+                setTimeout(() => setOauthUrlCopied(false), 1500);
             }
         }
     };
@@ -368,18 +358,14 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
         if (!manualCode.trim()) return;
 
         setStatus('loading');
-        setMessage(t('accounts.add.oauth.manual_submitting', '正在提交授权码...') || 'Submitting code...');
+        setMessage(t('accounts.add.oauth.manual_submitting', 'Submitting code...'));
 
         try {
             await invoke('submit_oauth_code', { code: manualCode.trim(), state: null });
-
-            // 提交成功反馈
             setStatus('success');
-            setMessage(t('accounts.add.oauth.manual_submitted', '授权码已提交，后台正在处理并刷新列表') || 'Code submitted! Backend is processing...');
-
+            setMessage(t('accounts.add.oauth.manual_submitted', 'Code submitted!'));
             setManualCode('');
 
-            // 对齐 Web 模式下的刷新逻辑
             if (!isTauri()) {
                 setTimeout(async () => {
                     await fetchAccounts();
@@ -388,42 +374,32 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
                 }, 2000);
             }
         } catch (error) {
-            let errStr = String(error);
+            const errStr = String(error);
             if (errStr.includes("No active OAuth flow")) {
                 setMessage(t('accounts.add.oauth.error_no_flow'));
-                setStatus('error');
             } else {
                 setMessage(`${t('common.error')}: ${errStr}`);
-                setStatus('error');
             }
+            setStatus('error');
         }
     };
 
-    const handleImportDb = () => {
-        handleAction(t('accounts.add.tabs.import'), importFromDb);
-    };
-
-    const handleImportV1 = () => {
-        handleAction(t('accounts.add.import.btn_v1'), importV1Accounts);
-    };
+    const handleImportDb = () => handleAction(t('accounts.add.tabs.import'), importFromDb);
+    const handleImportV1 = () => handleAction(t('accounts.add.import.btn_v1'), importV1Accounts);
 
     const handleImportCustomDb = async () => {
+        if (!isTauri()) {
+            alert(t('common.tauri_api_not_loaded') || 'Desktop app required');
+            return;
+        }
         try {
-            if (!isTauri()) {
-                alert(t('common.tauri_api_not_loaded') || 'Storage import only works in desktop app.');
-                return;
-            }
             const selected = await open({
                 multiple: false,
-                filters: [{
-                    name: 'VSCode DB',
-                    extensions: ['vscdb']
-                }, {
-                    name: 'All Files',
-                    extensions: ['*']
-                }]
+                filters: [
+                    { name: 'VSCode DB', extensions: ['vscdb'] },
+                    { name: 'All Files', extensions: ['*'] }
+                ]
             });
-
             if (selected && typeof selected === 'string') {
                 handleAction(t('accounts.add.import.btn_custom_db') || 'Import Custom DB', () => importFromCustomDb(selected));
             }
@@ -432,41 +408,38 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
         }
     };
 
-    // 状态提示组件
-    const StatusAlert = () => {
-        if (status === 'idle' || !message) return null;
-
-        const styles = {
-            loading: 'alert-info',
-            success: 'alert-success',
-            error: 'alert-error'
-        };
-
-        const icons = {
-            loading: <Loader2 className="w-5 h-5 animate-spin" />,
-            success: <CheckCircle2 className="w-5 h-5" />,
-            error: <XCircle className="w-5 h-5" />
-        };
-
-        return (
-            <div className={`alert ${styles[status]} mb-4 text-sm py-2 shadow-sm`}>
-                {icons[status]}
-                <span>{message}</span>
-            </div>
-        );
-    };
+    const isDisabled = status === 'loading' || status === 'success';
 
     return (
         <>
             {children ? (
-                <div onClick={() => setIsOpen(true)} className="inline-block cursor-pointer">
+                <div 
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('[AddAccountDialog] children wrapper clicked');
+                        setIsOpen(true);
+                    }} 
+                    className="inline-block cursor-pointer [&>*]:pointer-events-none"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setIsOpen(true);
+                        }
+                    }}
+                >
                     {children}
                 </div>
             ) : (
                 <button
-                    className="px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-2 shadow-sm border border-gray-200/50 dark:border-base-300 relative z-[100]"
-                    onClick={() => {
-                        console.log('AddAccountDialog button clicked');
+                    type="button"
+                    className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-bold rounded-xl hover:shadow-lg hover:shadow-indigo-500/25 transition-all flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('[AddAccountDialog] button clicked');
                         setIsOpen(true);
                     }}
                 >
@@ -476,253 +449,354 @@ function AddAccountDialog({ onAdd, children }: AddAccountDialogProps) {
             )}
 
             {isOpen && createPortal(
-                <div
-                    className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
-                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
-                >
-                    {/* Draggable Top Region */}
-                    <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[1]" />
+                <AnimatePresence>
+                    <motion.div
+                        key="dialog-overlay"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[99999] flex items-center justify-center"
+                    >
+                        {/* Backdrop */}
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            onClick={() => !isDisabled && setIsOpen(false)}
+                        />
 
-                    {/* Click outside to close */}
-                    <div className="absolute inset-0 z-[0]" onClick={() => setIsOpen(false)} />
+                        {/* Draggable region */}
+                        <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[1]" />
 
-                    <div className="bg-white dark:bg-base-100 text-gray-900 dark:text-base-content rounded-2xl shadow-2xl w-full max-w-lg p-6 relative z-[10] m-4 max-h-[90vh] overflow-y-auto">
-                        <h3 className="font-bold text-lg mb-4">{t('accounts.add.title')}</h3>
-
-                        {/* Tab 导航 - 胶囊风格 */}
-
-                        <div className="bg-gray-100 dark:bg-base-200 p-1 rounded-xl mb-6 grid grid-cols-3 gap-1">
-                            <button
-                                className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'oauth'
-                                    ? 'bg-white dark:bg-base-100 shadow-sm text-blue-600 dark:text-blue-400'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-base-300'
-                                    } `}
-                                onClick={() => setActiveTab('oauth')}
-                            >
-                                {t('accounts.add.tabs.oauth')}
-                            </button>
-                            <button
-                                className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'token'
-                                    ? 'bg-white dark:bg-base-100 shadow-sm text-blue-600 dark:text-blue-400'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-base-300'
-                                    } `}
-                                onClick={() => setActiveTab('token')}
-                            >
-                                {t('accounts.add.tabs.token')}
-                            </button>
-                            <button
-                                className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'import'
-                                    ? 'bg-white dark:bg-base-100 shadow-sm text-blue-600 dark:text-blue-400'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-base-300'
-                                    } `}
-                                onClick={() => setActiveTab('import')}
-                            >
-                                {t('accounts.add.tabs.import')}
-                            </button>
-                        </div>
-
-                        {/* 添加 Web 模式提示 */}
-                        {!isTauri() && (
-                            <div className="alert alert-info mb-4 text-xs py-2 flex items-center gap-2 bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-800">
-                                <Info className="w-4 h-4" />
-                                <span>{t('accounts.add.oauth.web_hint', '将在新窗口中打开 Google 登录页')}</span>
-                            </div>
-                        )}
-
-                        {/* 状态提示区 */}
-                        <StatusAlert />
-
-                        <div className="min-h-[200px]">
-                            {/* OAuth 授权 */}
-                            {activeTab === 'oauth' && (
-                                <div className="space-y-6 py-4">
-                                    <div className="text-center space-y-3">
-                                        <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-full w-20 h-20 mx-auto flex items-center justify-center">
-                                            <Globe className="w-10 h-10 text-blue-500" />
+                        {/* Dialog */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="relative z-10 w-full max-w-lg m-4 max-h-[90vh] overflow-hidden"
+                        >
+                            <div className="bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+                                {/* Header */}
+                                <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 shadow-lg shadow-indigo-500/25">
+                                            <Plus className="w-5 h-5 text-white" />
                                         </div>
-                                        <div className="space-y-1">
-                                            <h4 className="font-medium text-gray-900 dark:text-gray-100">{t('accounts.add.oauth.recommend')}</h4>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
-                                                {t('accounts.add.oauth.desc')}
-                                            </p>
-                                        </div>
+                                        <h3 className="text-lg font-bold text-white">{t('accounts.add.title')}</h3>
                                     </div>
-                                    <div className="space-y-3">
-                                        <button
-                                            className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                                            onClick={handleOAuth}
-                                            disabled={status === 'loading' || status === 'success'}
-                                        >
-                                            {status === 'loading' ? t('accounts.add.oauth.btn_waiting') : t('accounts.add.oauth.btn_start')}
-                                        </button>
+                                    <button
+                                        onClick={() => !isDisabled && setIsOpen(false)}
+                                        className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-white/5 transition-colors"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
 
-                                        {oauthUrl && (
-                                            <div className="space-y-2">
-                                                <div className="text-[11px] text-gray-500 dark:text-gray-400 text-left">
-                                                    {t('accounts.add.oauth.link_label')}
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    className="w-full px-4 py-2 bg-white dark:bg-base-100 text-gray-600 dark:text-gray-300 text-sm font-medium rounded-xl border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-base-200 transition-all flex items-center gap-2"
-                                                    onClick={handleCopyUrl}
-                                                    title={t('accounts.add.oauth.link_click_to_copy')}
-                                                >
-                                                    {oauthUrlCopied ? (
-                                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                                    ) : (
-                                                        <Copy className="w-3.5 h-3.5" />
-                                                    )}
-                                                    <code className="text-[11px] font-mono truncate flex-1 text-left">
-                                                        {oauthUrl}
-                                                    </code>
-                                                    <span className="text-[11px] whitespace-nowrap">
-                                                        {oauthUrlCopied ? t('accounts.add.oauth.copied') : t('accounts.add.oauth.copy_link')}
+                                {/* Content */}
+                                <div className="p-6 space-y-5 max-h-[calc(90vh-140px)] overflow-y-auto">
+                                    {/* Tab Navigation */}
+                                    <div className="bg-zinc-800/50 border border-white/5 p-1 rounded-xl grid grid-cols-3 gap-1">
+                                        {TABS.map((tab) => (
+                                            <button
+                                                key={tab.id}
+                                                onClick={() => setActiveTab(tab.id)}
+                                                className={cn(
+                                                    "relative py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2",
+                                                    activeTab === tab.id
+                                                        ? "text-white"
+                                                        : "text-zinc-500 hover:text-zinc-300"
+                                                )}
+                                            >
+                                                {activeTab === tab.id && (
+                                                    <motion.div
+                                                        layoutId="activeTab"
+                                                        className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 rounded-lg"
+                                                        transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
+                                                    />
+                                                )}
+                                                <tab.icon className="w-3.5 h-3.5 relative z-10" />
+                                                <span className="relative z-10">{t(tab.labelKey)}</span>
+                                                {tab.recommended && activeTab === tab.id && (
+                                                    <span className="relative z-10 px-1.5 py-0.5 text-[8px] font-bold bg-emerald-500/20 text-emerald-400 rounded border border-emerald-500/30">
+                                                        ★
                                                     </span>
-                                                </button>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
 
-                                                <button
-                                                    type="button"
-                                                    className="w-full px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-gray-50 dark:hover:bg-base-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                                                    onClick={handleCompleteOAuth}
-                                                    disabled={status === 'loading' || status === 'success'}
+                                    {/* Status Alert */}
+                                    <AnimatePresence mode="wait">
+                                        <StatusAlert status={status} message={message} />
+                                    </AnimatePresence>
+
+                                    {/* Tab Content */}
+                                    <AnimatePresence mode="wait">
+                                        {/* OAuth Tab */}
+                                        {activeTab === 'oauth' && (
+                                            <motion.div
+                                                key="oauth"
+                                                initial={{ opacity: 0, x: -20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 20 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="space-y-5"
+                                            >
+                                                {/* Hero Section */}
+                                                <div className="text-center space-y-4 py-4">
+                                                    <div className="relative inline-block">
+                                                        <div className="absolute inset-0 bg-blue-500/30 rounded-full blur-xl" />
+                                                        <div className="relative p-5 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 border border-blue-500/30">
+                                                            <Globe className="w-10 h-10 text-blue-400" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-center gap-2">
+                                                            <h4 className="font-bold text-white">{t('accounts.add.oauth.recommend')}</h4>
+                                                            <span className="px-2 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30 flex items-center gap-1">
+                                                                <Sparkles className="w-2.5 h-2.5" />
+                                                                {t('accounts.add.oauth.recommended_badge', 'Recommended')}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-sm text-zinc-400 max-w-xs mx-auto">
+                                                            {t('accounts.add.oauth.desc')}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Start OAuth Button */}
+                                                <motion.button
+                                                    whileHover={{ scale: 1.01 }}
+                                                    whileTap={{ scale: 0.99 }}
+                                                    className="w-full py-3.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    onClick={handleOAuth}
+                                                    disabled={isDisabled}
                                                 >
-                                                    <CheckCircle2 className="w-4 h-4" />
-                                                    {t('accounts.add.oauth.btn_finish')}
-                                                </button>
-                                            </div>
+                                                    {status === 'loading' ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                    ) : (
+                                                        <Globe className="w-4 h-4" />
+                                                    )}
+                                                    {status === 'loading' ? t('accounts.add.oauth.btn_waiting') : t('accounts.add.oauth.btn_start')}
+                                                </motion.button>
+
+                                                {/* OAuth URL Section */}
+                                                {oauthUrl && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, y: 10 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        className="space-y-3"
+                                                    >
+                                                        <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                                                            {t('accounts.add.oauth.link_label')}
+                                                        </div>
+                                                        
+                                                        <button
+                                                            onClick={handleCopyUrl}
+                                                            className="w-full p-3 bg-zinc-800/50 border border-white/5 rounded-xl hover:border-white/10 transition-all flex items-center gap-3 group"
+                                                        >
+                                                            <div className={cn(
+                                                                "p-2 rounded-lg transition-colors",
+                                                                oauthUrlCopied ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-700/50 text-zinc-400 group-hover:text-white"
+                                                            )}>
+                                                                {oauthUrlCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                                            </div>
+                                                            <code className="flex-1 text-[10px] font-mono text-zinc-400 truncate text-left">
+                                                                {oauthUrl}
+                                                            </code>
+                                                            <span className={cn(
+                                                                "text-[10px] font-bold px-2 py-1 rounded-lg transition-colors",
+                                                                oauthUrlCopied ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-700/50 text-zinc-500"
+                                                            )}>
+                                                                {oauthUrlCopied ? t('accounts.add.oauth.copied') : t('accounts.add.oauth.copy_link')}
+                                                            </span>
+                                                        </button>
+
+                                                        <button
+                                                            onClick={handleCompleteOAuth}
+                                                            disabled={isDisabled}
+                                                            className="w-full py-2.5 bg-zinc-800/50 border border-white/5 text-zinc-300 font-medium rounded-xl hover:bg-zinc-700/50 hover:border-white/10 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                                        >
+                                                            <CheckCircle2 className="w-4 h-4" />
+                                                            {t('accounts.add.oauth.btn_finish')}
+                                                        </button>
+                                                    </motion.div>
+                                                )}
+
+                                                {/* Manual Code Entry */}
+                                                <div className="pt-4 border-t border-white/5 space-y-3">
+                                                    <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                                                        {t('accounts.add.oauth.manual_hint')}
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            className="flex-1 px-4 py-2.5 bg-zinc-800/50 border border-white/5 rounded-xl text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
+                                                            placeholder={t('accounts.add.oauth.manual_placeholder')}
+                                                            value={manualCode}
+                                                            onChange={(e) => setManualCode(e.target.value)}
+                                                        />
+                                                        <motion.button
+                                                            whileHover={{ scale: 1.02 }}
+                                                            whileTap={{ scale: 0.98 }}
+                                                            onClick={handleManualSubmit}
+                                                            disabled={!manualCode.trim()}
+                                                            className="px-4 py-2.5 bg-zinc-700 text-white font-medium rounded-xl hover:bg-zinc-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            <Link2 className="w-4 h-4" />
+                                                            {t('common.submit')}
+                                                        </motion.button>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
                                         )}
 
-                                        {/* Manual Code Entry - Always enabled to rescue stuck flows */}
-                                        <div className="pt-4 mt-2 border-t border-gray-100 dark:border-base-200">
-                                            <div className="text-[11px] font-medium text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">
-                                                {t('accounts.add.oauth.manual_hint')}
-                                            </div>
-                                            <div className="relative group/manual flex gap-2">
-                                                <div className="relative flex-1">
-                                                    <input
-                                                        type="text"
-                                                        className="w-full text-xs py-2 px-3 bg-white dark:bg-base-100 border border-gray-200 dark:border-base-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300 dark:placeholder:text-gray-600"
-                                                        placeholder={t('accounts.add.oauth.manual_placeholder')}
-                                                        value={manualCode}
-                                                        onChange={(e) => setManualCode(e.target.value)}
+                                        {/* Token Tab */}
+                                        {activeTab === 'token' && (
+                                            <motion.div
+                                                key="token"
+                                                initial={{ opacity: 0, x: -20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 20 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="space-y-4"
+                                            >
+                                                <div className="p-4 bg-zinc-800/30 border border-white/5 rounded-xl space-y-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-sm font-medium text-zinc-400">{t('accounts.add.token.label')}</span>
+                                                        <Key className="w-4 h-4 text-zinc-600" />
+                                                    </div>
+                                                    <textarea
+                                                        className="w-full h-32 px-4 py-3 bg-zinc-900/50 border border-white/5 rounded-xl text-sm font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50 transition-colors resize-none"
+                                                        placeholder={t('accounts.add.token.placeholder')}
+                                                        value={refreshToken}
+                                                        onChange={(e) => setRefreshToken(e.target.value)}
+                                                        disabled={isDisabled}
                                                     />
+                                                    <p className="text-[10px] text-zinc-500">
+                                                        {t('accounts.add.token.hint')}
+                                                    </p>
                                                 </div>
-                                                <button
-                                                    className="px-4 py-2 bg-neutral text-white dark:bg-white dark:text-neutral text-xs font-semibold rounded-xl hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 flex items-center gap-1.5"
-                                                    onClick={handleManualSubmit}
-                                                    disabled={!manualCode.trim()}
+
+                                                <motion.button
+                                                    whileHover={{ scale: 1.01 }}
+                                                    whileTap={{ scale: 0.99 }}
+                                                    onClick={handleSubmit}
+                                                    disabled={isDisabled || !refreshToken.trim()}
+                                                    className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
-                                                    <Link2 className="w-3.5 h-3.5" />
-                                                    {t('common.submit')}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
+                                                    {status === 'loading' ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                    ) : (
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                    )}
+                                                    {t('accounts.add.btn_confirm')}
+                                                </motion.button>
+                                            </motion.div>
+                                        )}
+
+                                        {/* Import Tab */}
+                                        {activeTab === 'import' && (
+                                            <motion.div
+                                                key="import"
+                                                initial={{ opacity: 0, x: -20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 20 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="space-y-5"
+                                            >
+                                                {/* VSCode DB Import */}
+                                                <div className="p-4 bg-zinc-800/30 border border-white/5 rounded-xl space-y-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+                                                            <Database className="w-4 h-4" />
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-white text-sm">{t('accounts.add.import.scheme_a')}</h4>
+                                                            <p className="text-[11px] text-zinc-500">{t('accounts.add.import.scheme_a_desc')}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <motion.button
+                                                            whileHover={{ scale: 1.02 }}
+                                                            whileTap={{ scale: 0.98 }}
+                                                            onClick={handleImportDb}
+                                                            disabled={isDisabled}
+                                                            className="py-2.5 bg-zinc-700/50 border border-white/5 text-zinc-300 font-medium rounded-xl hover:bg-blue-500/10 hover:border-blue-500/30 hover:text-blue-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                                        >
+                                                            <Upload className="w-4 h-4" />
+                                                            {t('accounts.add.import.btn_db')}
+                                                        </motion.button>
+                                                        <motion.button
+                                                            whileHover={{ scale: 1.02 }}
+                                                            whileTap={{ scale: 0.98 }}
+                                                            onClick={handleImportCustomDb}
+                                                            disabled={isDisabled}
+                                                            className="py-2.5 bg-zinc-700/50 border border-white/5 text-zinc-300 font-medium rounded-xl hover:bg-indigo-500/10 hover:border-indigo-500/30 hover:text-indigo-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                                        >
+                                                            <FolderOpen className="w-4 h-4" />
+                                                            {t('accounts.add.import.btn_custom_db', 'Custom DB')}
+                                                        </motion.button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Divider */}
+                                                <div className="flex items-center gap-4">
+                                                    <div className="flex-1 h-px bg-white/5" />
+                                                    <span className="text-[10px] font-bold text-zinc-600 uppercase">{t('accounts.add.import.or')}</span>
+                                                    <div className="flex-1 h-px bg-white/5" />
+                                                </div>
+
+                                                {/* V1 Import */}
+                                                <div className="p-4 bg-zinc-800/30 border border-white/5 rounded-xl space-y-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                                                            <Sparkles className="w-4 h-4" />
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-white text-sm">{t('accounts.add.import.scheme_b')}</h4>
+                                                            <p className="text-[11px] text-zinc-500">{t('accounts.add.import.scheme_b_desc')}</p>
+                                                        </div>
+                                                    </div>
+                                                    <motion.button
+                                                        whileHover={{ scale: 1.02 }}
+                                                        whileTap={{ scale: 0.98 }}
+                                                        onClick={handleImportV1}
+                                                        disabled={isDisabled}
+                                                        className="w-full py-2.5 bg-zinc-700/50 border border-white/5 text-zinc-300 font-medium rounded-xl hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                                    >
+                                                        <Sparkles className="w-4 h-4" />
+                                                        {t('accounts.add.import.btn_v1')}
+                                                    </motion.button>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
                                 </div>
-                            )}
 
-                            {/* Refresh Token */}
-                            {activeTab === 'token' && (
-                                <div className="space-y-4 py-2">
-                                    <div className="bg-gray-50 dark:bg-base-200 p-4 rounded-lg border border-gray-200 dark:border-base-300">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{t('accounts.add.token.label')}</span>
-                                        </div>
-                                        <textarea
-                                            className="textarea textarea-bordered w-full h-32 font-mono text-xs leading-relaxed focus:outline-none focus:border-blue-500 transition-colors bg-white dark:bg-base-100 text-gray-900 dark:text-base-content border-gray-300 dark:border-base-300 placeholder:text-gray-400"
-                                            placeholder={t('accounts.add.token.placeholder')}
-                                            value={refreshToken}
-                                            onChange={(e) => setRefreshToken(e.target.value)}
-                                            disabled={status === 'loading' || status === 'success'}
-                                        />
-                                        <p className="text-[10px] text-gray-400 mt-2">
-                                            {t('accounts.add.token.hint')}
-                                        </p>
-                                    </div>
+                                {/* Footer */}
+                                <div className="px-6 py-4 border-t border-white/5 bg-zinc-900/50">
+                                    <button
+                                        onClick={async () => {
+                                            if (status === 'loading' && activeTab === 'oauth') {
+                                                await cancelOAuthLogin();
+                                            }
+                                            setIsOpen(false);
+                                        }}
+                                        disabled={status === 'success'}
+                                        className="w-full py-2.5 bg-zinc-800 text-zinc-400 font-medium rounded-xl hover:bg-zinc-700 hover:text-white transition-all disabled:opacity-50"
+                                    >
+                                        {t('accounts.add.btn_cancel')}
+                                    </button>
                                 </div>
-                            )}
-
-                            {/* 从数据库导入 */}
-                            {activeTab === 'import' && (
-                                <div className="space-y-6 py-2">
-                                    <div className="space-y-2">
-                                        <h4 className="font-semibold flex items-center gap-2 text-gray-800 dark:text-gray-200">
-                                            <Database className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                                            {t('accounts.add.import.scheme_a')}
-                                        </h4>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                            {t('accounts.add.import.scheme_a_desc')}
-                                        </p>
-                                        <button
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-200 dark:hover:border-blue-800 hover:text-blue-600 dark:hover:text-blue-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed mb-2 shadow-sm"
-                                            onClick={handleImportDb}
-                                            disabled={status === 'loading' || status === 'success'}
-                                        >
-                                            <CheckCircle2 className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                            {t('accounts.add.import.btn_db')}
-                                        </button>
-                                        <button
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-200 dark:hover:border-indigo-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                                            onClick={handleImportCustomDb}
-                                            disabled={status === 'loading' || status === 'success'}
-                                        >
-                                            <Database className="w-4 h-4" />
-                                            {t('accounts.add.import.btn_custom_db') || 'Custom DB (state.vscdb)'}
-                                        </button>
-                                    </div>
-
-                                    <div className="divider text-xs text-gray-300 dark:text-gray-600">{t('accounts.add.import.or')}</div>
-
-                                    <div className="space-y-2">
-                                        <h4 className="font-semibold flex items-center gap-2 text-gray-800 dark:text-gray-200">
-                                            <FileClock className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                                            {t('accounts.add.import.scheme_b')}
-                                        </h4>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                            {t('accounts.add.import.scheme_b_desc')}
-                                        </p>
-                                        <button
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-200 dark:hover:border-emerald-800 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                                            onClick={handleImportV1}
-                                            disabled={status === 'loading' || status === 'success'}
-                                        >
-                                            <FileClock className="w-4 h-4" />
-                                            {t('accounts.add.import.btn_v1')}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex gap-3 w-full mt-6">
-                            <button
-                                className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-base-300 transition-colors focus:outline-none focus:ring-2 focus:ring-200 dark:focus:ring-base-300"
-                                onClick={async () => {
-                                    if (status === 'loading' && activeTab === 'oauth') {
-                                        await cancelOAuthLogin();
-                                    }
-                                    setIsOpen(false);
-                                }}
-                                disabled={status === 'success'} // Only disable on success, allow cancel on loading
-                            >
-                                {t('accounts.add.btn_cancel')}
-                            </button>
-                            {activeTab === 'token' && (
-                                <button
-                                    className="flex-1 px-4 py-2.5 text-white font-medium rounded-xl shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 bg-blue-500 hover:bg-blue-600 focus:ring-blue-500 shadow-blue-100 dark:shadow-blue-900/30 flex justify-center items-center gap-2"
-                                    onClick={handleSubmit}
-                                    disabled={status === 'loading' || status === 'success'}
-                                >
-                                    {status === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                                    {t('accounts.add.btn_confirm')}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div >,
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                </AnimatePresence>,
                 document.body
-            )
-            }
+            )}
         </>
     );
 }

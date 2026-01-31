@@ -23,6 +23,7 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
     const maxWaitSeconds = config?.max_wait_seconds || 60;
     const selectedAccounts = new Set(config?.selected_accounts || []);
     const selectedModels = config?.selected_models || {};
+    const strictSelected = config?.strict_selected || false;
 
     const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -32,7 +33,8 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
             mode,
             max_wait_seconds: maxWaitSeconds,
             selected_accounts: Array.from(selectedAccounts),
-            selected_models: selectedModels
+            selected_models: selectedModels,
+            strict_selected: strictSelected
         });
     };
 
@@ -41,7 +43,18 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
             mode: currentMode,
             max_wait_seconds: seconds,
             selected_accounts: Array.from(selectedAccounts),
-            selected_models: selectedModels
+            selected_models: selectedModels,
+            strict_selected: strictSelected
+        });
+    };
+
+    const handleToggleStrict = (strict: boolean) => {
+        onChange({
+            mode: currentMode,
+            max_wait_seconds: maxWaitSeconds,
+            selected_accounts: Array.from(selectedAccounts),
+            selected_models: selectedModels,
+            strict_selected: strict
         });
     };
 
@@ -56,7 +69,8 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
             mode: currentMode,
             max_wait_seconds: maxWaitSeconds,
             selected_accounts: Array.from(newSet),
-            selected_models: selectedModels
+            selected_models: selectedModels,
+            strict_selected: strictSelected
         });
     };
 
@@ -66,14 +80,16 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
                 mode: currentMode,
                 max_wait_seconds: maxWaitSeconds,
                 selected_accounts: [],
-                selected_models: selectedModels
+                selected_models: selectedModels,
+                strict_selected: strictSelected
             });
         } else {
             onChange({
                 mode: currentMode,
                 max_wait_seconds: maxWaitSeconds,
                 selected_accounts: accounts.map(a => a.id),
-                selected_models: selectedModels
+                selected_models: selectedModels,
+                strict_selected: strictSelected
             });
         }
     };
@@ -92,7 +108,8 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
             mode: currentMode,
             max_wait_seconds: maxWaitSeconds,
             selected_accounts: Array.from(selectedAccounts),
-            selected_models: { ...selectedModels, [accountId]: newList }
+            selected_models: { ...selectedModels, [accountId]: newList },
+            strict_selected: strictSelected
         });
     };
 
@@ -224,6 +241,32 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
                         exit={{ opacity: 0, y: 10 }}
                         className="space-y-3 pt-2"
                     >
+                        {/* Strict Mode Toggle */}
+                        <div className="p-3 rounded-xl bg-zinc-900/30 border border-white/5 flex items-center justify-between">
+                            <div className="flex gap-3 items-center">
+                                <div className="p-1.5 bg-red-500/10 rounded-lg text-red-500">
+                                    <Target size={14} />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-zinc-300 block">
+                                        {t('settings.proxy.scheduling.strict_mode', { defaultValue: 'Strict Mode' })}
+                                    </label>
+                                    <p className="text-[10px] text-zinc-500 hidden sm:block">
+                                        {t('settings.proxy.scheduling.strict_mode_tooltip', { defaultValue: 'Fail request if no selected account available (no fallback)' })}
+                                    </p>
+                                </div>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={strictSelected}
+                                    onChange={(e) => handleToggleStrict(e.target.checked)}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500"></div>
+                            </label>
+                        </div>
+
                         <div className="flex items-center justify-between">
                             <h4 className="text-xs font-bold text-zinc-400 flex items-center gap-2 uppercase tracking-wider">
                                 <Target size={14} />

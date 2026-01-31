@@ -38,6 +38,8 @@ export interface StickySessionConfig {
   selected_accounts: string[];
   /* Account ID -> Allowed Model Names */
   selected_models?: Record<string, string[]>;
+  /* Strict mode: fail request if no selected account available (no fallback) */
+  strict_selected?: boolean;
 }
 
 export type ZaiDispatchMode = "off" | "exclusive" | "pooled" | "fallback";
@@ -106,10 +108,13 @@ export interface AppConfig {
   auto_check_update?: boolean; // 自动检查更新
   update_check_interval?: number; // 更新检查间隔（小时）
   accounts_page_size?: number; // 账号列表每页显示数量,默认 0 表示自动计算
+  debug_console_enabled?: boolean; // [NEW] 启用调试控制台
+  show_proxy_selected_badge?: boolean; // [NEW] 显示代理选中标记
   scheduled_warmup: ScheduledWarmupConfig;
   quota_protection: QuotaProtectionConfig; // [NEW] 配额保护配置
   pinned_quota_models: PinnedQuotaModelsConfig; // [NEW] 配额关注列表
   circuit_breaker: CircuitBreakerConfig; // [NEW] 熔断器配置
+  validation_block_minutes?: number; // [NEW] Minutes to block account after VALIDATION_REQUIRED error
   proxy: ProxyConfig;
 }
 

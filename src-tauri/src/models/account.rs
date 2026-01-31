@@ -37,6 +37,15 @@ pub struct Account {
     /// 受配额保护禁用的模型列表 [NEW #621]
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub protected_models: HashSet<String>,
+    /// Temporary block due to VALIDATION_REQUIRED (403) error
+    #[serde(default)]
+    pub validation_blocked: bool,
+    /// Unix timestamp when the validation block expires
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_blocked_until: Option<i64>,
+    /// Reason for temporary validation block
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_blocked_reason: Option<String>,
     pub created_at: i64,
     pub last_used: i64,
 }
@@ -59,6 +68,9 @@ impl Account {
             proxy_disabled_reason: None,
             proxy_disabled_at: None,
             protected_models: HashSet::new(),
+            validation_blocked: false,
+            validation_blocked_until: None,
+            validation_blocked_reason: None,
             created_at: now,
             last_used: now,
         }

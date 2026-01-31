@@ -1,4 +1,4 @@
-import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, ToggleLeft, ToggleRight, Fingerprint, Sparkles } from 'lucide-react';
+import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, ToggleLeft, ToggleRight, Fingerprint, Sparkles, CheckCircle2 } from 'lucide-react';
 import { Account } from '../../types/account';
 import { getQuotaColor, formatTimeRemaining, getTimeRemainingColor } from '../../utils/format';
 import { cn } from '../../utils/cn';
@@ -12,6 +12,7 @@ interface AccountCardProps {
     isCurrent: boolean;
     isRefreshing: boolean;
     isSwitching?: boolean;
+    isSelectedForProxy?: boolean;
     onSwitch: () => void;
     onRefresh: () => void;
     onViewDevice: () => void;
@@ -28,7 +29,8 @@ const AccountCard = memo(function AccountCard({
     onSelect, 
     isCurrent, 
     isRefreshing, 
-    isSwitching = false, 
+    isSwitching = false,
+    isSelectedForProxy = false,
     onSwitch, 
     onRefresh, 
     onViewDetails, 
@@ -122,6 +124,13 @@ const AccountCard = memo(function AccountCard({
 
                     {/* Badges Row */}
                     <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Selected for Proxy Badge */}
+                        {isSelectedForProxy && (
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 text-[9px] font-bold text-green-300 uppercase tracking-wider">
+                                <CheckCircle2 className="w-2.5 h-2.5" /> SELECTED
+                            </span>
+                        )}
+
                         {/* Subscription Tier */}
                         {account.quota?.subscription_tier && (() => {
                             const tier = account.quota.subscription_tier.toLowerCase();
@@ -150,6 +159,16 @@ const AccountCard = memo(function AccountCard({
                         {account.quota?.is_forbidden && (
                             <span className="px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-[9px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1">
                                 <Lock className="w-2.5 h-2.5" /> BANNED
+                            </span>
+                        )}
+
+                        {/* Validation Blocked Badge (VALIDATION_REQUIRED 403) */}
+                        {account.validation_blocked && account.validation_blocked_until && (
+                            <span 
+                                className="px-1.5 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 text-[9px] font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1 animate-pulse"
+                                title={account.validation_blocked_reason || 'Verification required'}
+                            >
+                                <Clock className="w-2.5 h-2.5" /> {formatTimeRemaining(new Date(account.validation_blocked_until * 1000).toISOString())}
                             </span>
                         )}
                     </div>

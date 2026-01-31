@@ -13,19 +13,19 @@ interface SmartWarmupProps {
 const SmartWarmup: React.FC<SmartWarmupProps> = ({ config, onChange }) => {
     const { t } = useTranslation();
 
-    // Pre-defined popular models
+    // Pre-defined popular models (matching actual API model IDs)
     const presetModels = [
         { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-        { id: 'gemini-2.5-flash-thinking', label: 'Gemini 2.5 Flash Thinking' },
-        { id: 'claude-sonnet-4-5', label: 'Claude 3.5 Sonnet' }, // User said 4.5 but standard naming convention might differ, sticking to ID user gave
-        { id: 'gemini-3-pro-high', label: 'Gemini 3 Pro High' },
-        { id: 'gemini-3-flash', label: 'Gemini 3 Flash' },
-        { id: 'claude-sonnet-4-5-thinking', label: 'Claude 3.5 Sonnet Thinking' },
-        { id: 'gemini-3-pro-image', label: 'Gemini 3 Pro Image' },
-        { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
         { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+        { id: 'gemini-2.5-flash-thinking', label: 'Gemini 2.5 Flash Thinking' },
+        { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+        { id: 'gemini-3-pro-high', label: 'Gemini 3 Pro High' },
         { id: 'gemini-3-pro-low', label: 'Gemini 3 Pro Low' },
-        { id: 'claude-opus-4-5-thinking', label: 'Claude 3.5 Opus Thinking' },
+        { id: 'gemini-3-pro-image', label: 'Gemini 3 Pro Image' },
+        { id: 'gemini-3-flash', label: 'Gemini 3 Flash' },
+        { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+        { id: 'claude-sonnet-4-5-thinking', label: 'Claude Sonnet 4.5 Thinking' },
+        { id: 'claude-opus-4-5-thinking', label: 'Claude Opus 4.5 Thinking' },
     ];
 
     const handleEnabledChange = (enabled: boolean) => {

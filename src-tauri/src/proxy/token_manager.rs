@@ -58,7 +58,6 @@ pub struct TokenManager {
     rate_limit_tracker: Arc<RateLimitTracker>,  // 新增: 限流跟踪器
     sticky_config: Arc<tokio::sync::RwLock<StickySessionConfig>>, // 新增：调度配置
     session_accounts: Arc<DashMap<String, (String, std::time::Instant)>>, // [FIX] Store timestamp for cleanup
-    preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>, // [FIX #820] 优先使用的账号ID（固定账号模式）
     health_scores: Arc<DashMap<String, f32>>, // account_id -> health_score
     active_requests: Arc<DashMap<String, AtomicUsize>>, // [NEW] Least Connections tracking
     circuit_breaker_config: Arc<tokio::sync::RwLock<crate::models::CircuitBreakerConfig>>, // [NEW] 熔断配置缓存
@@ -75,7 +74,6 @@ impl TokenManager {
             rate_limit_tracker: Arc::new(RateLimitTracker::new()),
             sticky_config: Arc::new(tokio::sync::RwLock::new(StickySessionConfig::default())),
             session_accounts: Arc::new(DashMap::new()),
-            preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)), // [FIX #820]
             health_scores: Arc::new(DashMap::new()),
             active_requests: Arc::new(DashMap::new()),
             circuit_breaker_config: Arc::new(tokio::sync::RwLock::new(crate::models::CircuitBreakerConfig::default())),
@@ -243,6 +241,48 @@ impl TokenManager {
                 account.get("email").and_then(|v| v.as_str()).unwrap_or("<unknown>")
             );
             return Ok(None);
+        }
+
+        // [NEW] Check for validation block (VALIDATION_REQUIRED temporary block)
+        if account
+            .get("validation_blocked")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            let block_until = account
+                .get("validation_blocked_until")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            
+            let now = chrono::Utc::now().timestamp();
+            
+            if now < block_until {
+                // Still blocked
+                tracing::debug!(
+                    "Skipping validation-blocked account: {:?} (email={}, blocked until {})",
+                    path,
+                    account.get("email").and_then(|v| v.as_str()).unwrap_or("<unknown>"),
+                    chrono::DateTime::from_timestamp(block_until, 0)
+                        .map(|dt| dt.format("%H:%M:%S").to_string())
+                        .unwrap_or_else(|| block_until.to_string())
+                );
+                return Ok(None);
+            } else {
+                // Block expired - clear it
+                tracing::info!(
+                    "Validation block expired for account: {:?} (email={}), clearing...",
+                    path,
+                    account.get("email").and_then(|v| v.as_str()).unwrap_or("<unknown>")
+                );
+                account["validation_blocked"] = serde_json::Value::Bool(false);
+                account["validation_blocked_until"] = serde_json::Value::Null;
+                account["validation_blocked_reason"] = serde_json::Value::Null;
+                
+                // Save cleared state
+                if let Ok(json_str) = serde_json::to_string_pretty(&account) {
+                    let _ = std::fs::write(path, json_str);
+                }
+            }
         }
 
         let account_id = account["id"].as_str()
@@ -823,75 +863,6 @@ impl TokenManager {
         // 【安全修正】过滤后更新 total，防止下标越界
         let total = tokens_snapshot.len();
 
-        // ===== [FIX #820] 固定账号模式：优先使用指定账号 =====
-        // ===== [FIX #820] 固定账号模式：优先使用指定账号 (STRICT MODE) =====
-        let preferred_id = self.preferred_account_id.read().await.clone();
-        if let Some(ref pref_id) = preferred_id {
-            // 查找优先账号
-            if let Some(preferred_token) = tokens_snapshot.iter().find(|t| &t.account_id == pref_id) {
-                // 检查账号是否可用（未限流、未被配额保护）
-                let normalized_target = crate::proxy::common::model_mapping::normalize_to_standard_id(target_model)
-                    .unwrap_or_else(|| target_model.to_string());
-
-                // 【修复】Strict Fixed Mode: 如果账号限流，进行等待而不是切换
-                let mut retry_count = 0;
-                loop {
-                    let is_rate_limited = self.is_rate_limited(&preferred_token.account_id, Some(&normalized_target)).await;
-                    let is_quota_protected = quota_protection_enabled && preferred_token.protected_models.contains(&normalized_target);
-
-                    if !is_rate_limited && !is_quota_protected {
-                        tracing::info!(
-                            "🔒 [FIX #820] Using preferred account: {} (fixed mode)",
-                            preferred_token.email
-                        );
-
-                        // 直接使用优先账号
-                        let mut token = preferred_token.clone();
-                        // 尝试刷新 Token
-                        self.try_refresh_token_if_needed(&mut token).await; 
-                        // 确保有 Project ID
-                        let project_id = self.ensure_project_id(&mut token).await;
-
-                        // [NEW] Increment active requests
-                        self.active_requests.entry(token.account_id.clone())
-                            .or_insert(AtomicUsize::new(0))
-                            .fetch_add(1, Ordering::SeqCst);
-                        
-                        tracing::debug!("⬆️ Connection acquired: {} (active: {})", token.email, self.active_requests.get(&token.account_id).unwrap().load(Ordering::SeqCst));
-
-                        return Ok(TokenLease {
-                            access_token: token.access_token,
-                            project_id,
-                            email: token.email,
-                            account_id: token.account_id.clone(),
-                            active_requests: self.active_requests.clone(),
-                        });
-                    } else {
-                        // 能够等待的情况：仅限 Rate Limit，且等待时间在允许范围内
-                        // 配额保护 (Quota Protected) 通常意味着耗尽，等待 60s 也无济于事，除非 Reset 即将到来
-                        // 这里简单处理：检查 wait time
-                        if is_rate_limited {
-                           let key = self.email_to_account_id(&preferred_token.email).unwrap_or_else(|| preferred_token.account_id.clone());
-                           let wait_sec = self.rate_limit_tracker.get_remaining_wait(&key, Some(&normalized_target));
-                           
-                           if wait_sec > 0 && wait_sec <= scheduling.max_wait_seconds {
-                               tracing::warn!("🔒 [Strict Fixed] Account {} limited, waiting {}s...", preferred_token.email, wait_sec);
-                               tokio::time::sleep(std::time::Duration::from_secs(wait_sec)).await;
-                               retry_count += 1;
-                               if retry_count < 2 { continue; } // 允许重试一次
-                           }
-                        }
-                        
-                        // 无法等待或等待后仍不可用 -> 直接报错，不回退
-                        return Err(format!("Preferred account {} is unavailable (Limited/Protected), strict mode enabled.", preferred_token.email));
-                    }
-                }
-            } else {
-                 return Err(format!("Preferred account {} not found in pool.", pref_id));
-            }
-        }
-        // ===== [END FIX #820] =====
-
         // 【优化 Issue #284】将锁操作移到循环外，避免重复获取锁
         // 预先获取 last_used_account 的快照，避免在循环中多次加锁
         let last_used_account_id = if quota_group != "image_gen" {
@@ -1278,6 +1249,45 @@ impl TokenManager {
         Ok(())
     }
 
+    /// Temporarily block account due to VALIDATION_REQUIRED (403) error
+    async fn set_validation_block(&self, account_id: &str, block_until: i64, reason: &str) -> Result<(), String> {
+        let path = if let Some(entry) = self.tokens.get(account_id) {
+            entry.account_path.clone()
+        } else {
+            self.data_dir
+                .join("accounts")
+                .join(format!("{}.json", account_id))
+        };
+
+        let mut content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {}", e))?,
+        )
+        .map_err(|e| format!("解析 JSON 失败: {}", e))?;
+
+        content["validation_blocked"] = serde_json::Value::Bool(true);
+        content["validation_blocked_until"] = serde_json::Value::Number(block_until.into());
+        content["validation_blocked_reason"] = serde_json::Value::String(truncate_reason(reason, 500));
+
+        let json_str = serde_json::to_string_pretty(&content)
+            .map_err(|e| format!("序列化 JSON 失败: {}", e))?;
+
+        std::fs::write(&path, json_str)
+            .map_err(|e| format!("写入文件失败: {}", e))?;
+        
+        // Remove from memory pool temporarily
+        self.tokens.remove(account_id);
+
+        tracing::warn!(
+            "Account validation blocked until {}: {} ({:?})",
+            chrono::DateTime::from_timestamp(block_until, 0)
+                .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_else(|| block_until.to_string()),
+            account_id,
+            path
+        );
+        Ok(())
+    }
+
     /// 保存 project_id 到账号文件
     async fn save_project_id(&self, account_id: &str, project_id: &str) -> Result<(), String> {
         let entry = self.tokens.get(account_id)
@@ -1299,6 +1309,21 @@ impl TokenManager {
         
         tracing::debug!("已保存 project_id 到账号 {}", account_id);
         Ok(())
+    }
+
+    /// Public method to set validation block (called from handlers)
+    pub async fn set_validation_block_public(&self, account_id: &str, block_until: i64, reason: &str) -> Result<(), String> {
+        self.set_validation_block(account_id, block_until, reason).await
+    }
+
+    /// Get account ID by email (for handlers that only have email)
+    pub fn get_account_id_by_email(&self, email: &str) -> Option<String> {
+        for entry in self.tokens.iter() {
+            if entry.email == email {
+                return Some(entry.account_id.clone());
+            }
+        }
+        None
     }
 
     /// [FEEDBACK-LOOP] 报告 429 错误，大幅降低健康分
@@ -1841,25 +1866,6 @@ impl TokenManager {
     /// 清除所有会话的粘性映射
     pub fn clear_all_sessions(&self) {
         self.session_accounts.clear();
-    }
-
-    // ===== [FIX #820] 固定账号模式相关方法 =====
-
-    /// 设置优先使用的账号ID（固定账号模式）
-    /// 传入 Some(account_id) 启用固定账号模式，传入 None 恢复轮询模式
-    pub async fn set_preferred_account(&self, account_id: Option<String>) {
-        let mut preferred = self.preferred_account_id.write().await;
-        if let Some(ref id) = account_id {
-            tracing::info!("🔒 [FIX #820] Fixed account mode enabled: {}", id);
-        } else {
-            tracing::info!("🔄 [FIX #820] Round-robin mode enabled (no preferred account)");
-        }
-        *preferred = account_id;
-    }
-
-    /// 获取当前优先使用的账号ID
-    pub async fn get_preferred_account(&self) -> Option<String> {
-        self.preferred_account_id.read().await.clone()
     }
 
     /// 使用 Authorization Code 交换 Refresh Token (Web OAuth)

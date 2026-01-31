@@ -9,6 +9,7 @@ import Monitor from './pages/Monitor';
 import TokenStats from './pages/TokenStats';
 import ThemeManager from './components/common/ThemeManager';
 import { UpdateNotification } from './components/UpdateNotification';
+import DebugConsole from './components/debug/DebugConsole';
 import { useEffect, useState } from 'react';
 import { useConfigStore } from './stores/useConfigStore';
 import { useAccountStore } from './stores/useAccountStore';
@@ -17,6 +18,7 @@ import { listen } from '@tauri-apps/api/event';
 import { isTauri } from './utils/env';
 import { request as invoke } from './utils/request';
 import { AdminAuthGuard } from './components/common/AdminAuthGuard';
+import { showToast } from './components/common/ToastContainer';
 
 const router = createBrowserRouter([
   {
@@ -96,6 +98,22 @@ function App() {
       })
     );
 
+    // [NEW] Listen for account validation blocked event
+    unlistenPromises.push(
+      listen<{ account_id: string; email: string; blocked_until: number; reason: string }>('account-validation-blocked', (event) => {
+        console.log('[App] Account validation blocked:', event.payload);
+        const { email, blocked_until } = event.payload;
+        const blockedUntilDate = new Date(blocked_until * 1000);
+        const timeStr = blockedUntilDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        showToast(
+          `Account ${email} temporarily blocked until ${timeStr} (verification required)`,
+          'warning'
+        );
+        // Refresh accounts to update UI
+        fetchAccounts();
+      })
+    );
+
     // Cleanup
     return () => {
       Promise.all(unlistenPromises).then(unlisteners => {
@@ -135,6 +153,7 @@ function App() {
   return (
     <AdminAuthGuard>
       <ThemeManager />
+      <DebugConsole />
       {showUpdateNotification && (
         <UpdateNotification onClose={() => setShowUpdateNotification(false)} />
       )}

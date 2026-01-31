@@ -1,4 +1,3 @@
-// File: src/pages/Settings.tsx
 import { useState, useEffect, memo } from 'react';
 import { 
   Settings as SettingsIcon, 
@@ -14,16 +13,19 @@ import {
   MessageCircle,
   Github,
   RefreshCw,
-  ChevronRight
+  ChevronRight,
+  Bug
 } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
 import { request as invoke } from '../utils/request';
 import { useConfigStore } from '../stores/useConfigStore';
+import { useDebugConsole } from '../stores/useDebugConsole';
 import { AppConfig } from '../types/config';
 import { showToast } from '../components/common/ToastContainer';
 import QuotaProtection from '../components/settings/QuotaProtection';
 import SmartWarmup from '../components/settings/SmartWarmup';
 import PinnedQuotaModels from '../components/settings/PinnedQuotaModels';
+import { getVersion } from '@tauri-apps/api/app';
 
 import { useTranslation } from 'react-i18next';
 import { isTauri } from '../utils/env';
@@ -139,10 +141,54 @@ const SECTIONS = [
   { id: "about", label: "settings.tabs.about", icon: Info, desc: "App Info & Support" },
 ];
 
+// --- Debug Console Toggle Component ---
+const DebugConsoleToggle = () => {
+    const { t } = useTranslation();
+    const { isEnabled, enable, disable } = useDebugConsole();
+
+    const handleToggle = async (checked: boolean) => {
+        if (checked) {
+            await enable();
+            showToast(t('settings.advanced.debug_console_enabled', 'Debug console enabled'), 'success');
+        } else {
+            await disable();
+            showToast(t('settings.advanced.debug_console_disabled', 'Debug console disabled'), 'info');
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                    <Label className="text-base text-zinc-200">
+                        {t('settings.advanced.debug_console_enable', 'Enable Debug Console')}
+                    </Label>
+                    <p className="text-sm text-zinc-500">
+                        {t('settings.advanced.debug_console_desc', 'Show real-time application logs in the navbar. Useful for debugging.')}
+                    </p>
+                </div>
+                <Switch 
+                    checked={isEnabled}
+                    onCheckedChange={handleToggle}
+                />
+            </div>
+            {isEnabled && (
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm">
+                    <div className="flex items-center gap-2">
+                        <Terminal size={16} />
+                        <span>{t('settings.advanced.debug_console_active', 'Console is active. Click the Console button in the navbar to view logs.')}</span>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export const Settings = () => {
     const { t, i18n } = useTranslation();
     const { config, loadConfig, saveConfig, updateLanguage, updateTheme } = useConfigStore();
     const [activeTab, setActiveTab] = useState("general");
+    const [appVersion, setAppVersion] = useState('');
     
     // Config State
     const [formData, setFormData] = useState<AppConfig>({
@@ -174,6 +220,7 @@ export const Settings = () => {
     // Initial Load
     useEffect(() => {
         loadConfig();
+        getVersion().then(setAppVersion).catch(() => setAppVersion('5.0.2'));
         invoke<string>('get_data_dir_path').then(setDataDirPath).catch(console.error);
         invoke<{ auto_check: boolean; check_interval_hours: number }>('get_update_settings')
             .then(s => setFormData(p => ({ ...p, auto_check_update: s.auto_check, update_check_interval: s.check_interval_hours })))
@@ -474,7 +521,53 @@ export const Settings = () => {
                                 )}
 
                                 {activeTab === 'advanced' && (
-                                    <SettingsCard title={t('settings.advanced.paths')} icon={Terminal}>
+                                    <>
+                                        <SettingsCard title={t('settings.advanced.debug_console', 'Debug Console')} icon={Bug}>
+                                            <DebugConsoleToggle />
+                                        </SettingsCard>
+                                        <SettingsCard title={t('settings.advanced.display', 'Display Options')} icon={Monitor}>
+                                            <div className="space-y-4">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="space-y-1">
+                                                        <Label className="text-base text-zinc-200">
+                                                            {t('settings.advanced.show_proxy_selected_badge', 'Show "SELECTED" badge')}
+                                                        </Label>
+                                                        <p className="text-sm text-zinc-500">
+                                                            {t('settings.advanced.show_proxy_selected_badge_desc', 'Display which accounts are selected for API Proxy scheduling on the Accounts page')}
+                                                        </p>
+                                                    </div>
+                                                    <Switch 
+                                                        checked={formData.show_proxy_selected_badge ?? true}
+                                                        onCheckedChange={(c) => setFormData({ ...formData, show_proxy_selected_badge: c })}
+                                                    />
+                                                </div>
+                                                
+                                                <div className="h-px bg-white/5 w-full" />
+                                                
+                                                <div className="space-y-3">
+                                                    <div className="space-y-1">
+                                                        <Label className="text-base text-zinc-200">
+                                                            {t('settings.advanced.validation_block_minutes', 'Validation Block Duration')}
+                                                        </Label>
+                                                        <p className="text-sm text-zinc-500">
+                                                            {t('settings.advanced.validation_block_minutes_desc', 'How long to temporarily block an account after VALIDATION_REQUIRED (403) error')}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <Input 
+                                                            type="number"
+                                                            min={1}
+                                                            max={60}
+                                                            className="w-24 bg-zinc-50 dark:bg-zinc-900/50 border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white"
+                                                            value={formData.validation_block_minutes ?? 10}
+                                                            onChange={(e) => setFormData({ ...formData, validation_block_minutes: Number(e.target.value) })}
+                                                        />
+                                                        <span className="text-sm text-zinc-500">{t('common.minutes', 'minutes')}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </SettingsCard>
+                                        <SettingsCard title={t('settings.advanced.paths')} icon={Terminal}>
                                         <div className="space-y-6">
                                              {/* Standard Advanced Inputs Re-styled */}
                                               <div>
@@ -490,6 +583,7 @@ export const Settings = () => {
                                             </div>
                                         </div>
                                     </SettingsCard>
+                                    </>
                                 )}
 
                                 {activeTab === 'about' && (
@@ -503,7 +597,7 @@ export const Settings = () => {
                                             <div>
                                                 <h3 className="text-4xl font-black text-white tracking-tighter mb-2">Antigravity Tools</h3>
                                                 <div className="flex items-center justify-center gap-3 text-sm">
-                                                    <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-400 font-medium border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]">v5.0.0</span>
+                                                    <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-400 font-medium border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]">v{appVersion || '5.0.2'}</span>
                                                 </div>
                                             </div>
                                         </div>

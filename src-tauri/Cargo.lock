@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "antigravity_tools"
-version = "5.0.0"
+version = "5.0.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -73,6 +73,7 @@ dependencies = [
  "image",
  "libc",
  "once_cell",
+ "parking_lot",
  "pin-project",
  "rand 0.8.5",
  "regex",

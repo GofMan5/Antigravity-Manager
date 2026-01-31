@@ -13,6 +13,10 @@ export interface Account {
     proxy_disabled_reason?: string;
     proxy_disabled_at?: number;
     protected_models?: string[];
+    // [NEW] Validation block (VALIDATION_REQUIRED 403 error)
+    validation_blocked?: boolean;
+    validation_blocked_until?: number;
+    validation_blocked_reason?: string;
     created_at: number;
     last_used: number;
 }

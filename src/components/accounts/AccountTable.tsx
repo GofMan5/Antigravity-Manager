@@ -57,6 +57,7 @@ interface AccountTableProps {
     accounts: Account[];
     selectedIds: Set<string>;
     refreshingIds: Set<string>;
+    proxySelectedAccountIds?: Set<string>;
     onToggleSelect: (id: string) => void;
     onToggleAll: () => void;
     currentAccountId: string | null;
@@ -78,7 +79,7 @@ interface SortableRowProps {
     isRefreshing: boolean;
     isCurrent: boolean;
     isSwitching: boolean;
-    // isDragging?: boolean; // Removed unused prop
+    isSelectedForProxy?: boolean;
     onSelect: () => void;
     onSwitch: () => void;
     onRefresh: () => void;
@@ -115,7 +116,7 @@ function getTimeColorClass(resetTime: string | undefined): string {
 // Row Component
 // ===================================
 function SortableAccountRow({
-    account, selected, isRefreshing, isCurrent, isSwitching,
+    account, selected, isRefreshing, isCurrent, isSwitching, isSelectedForProxy,
     onSelect, onSwitch, onRefresh, onViewDevice, onViewDetails, onExport, onDelete, onToggleProxy, onWarmup
 }: SortableRowProps) {
     const { t } = useTranslation();
@@ -161,6 +162,9 @@ function SortableAccountRow({
             {/* Email & Account Info */}
             <div className="flex flex-col min-w-0 pr-4">
                 <div className="flex items-center gap-2 mb-1">
+                    {/* Selected for Proxy */}
+                    {isSelectedForProxy && <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-300 text-[9px] font-bold border border-green-500/20">SELECTED</span>}
+
                     {/* Subscription Tier */}
                     {account.quota?.subscription_tier && (() => {
                          const tier = account.quota.subscription_tier.toLowerCase();
@@ -291,7 +295,7 @@ const restrictToVerticalAxis = ({ transform }: { transform: any }) => {
 };
 
 const AccountTable = memo(function AccountTable({
-    accounts, selectedIds, refreshingIds, onToggleSelect, onToggleAll,
+    accounts, selectedIds, refreshingIds, proxySelectedAccountIds, onToggleSelect, onToggleAll,
     currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDevice,
     onViewDetails, onExport, onDelete, onToggleProxy, onReorder, onWarmup
 }: AccountTableProps) {
@@ -384,6 +388,7 @@ const AccountTable = memo(function AccountTable({
                                 isRefreshing={refreshingIds.has(account.id)}
                                 isCurrent={account.id === currentAccountId}
                                 isSwitching={account.id === switchingAccountId}
+                                isSelectedForProxy={proxySelectedAccountIds?.has(account.id) || false}
                                 onSelect={() => onToggleSelect(account.id)}
                                 onSwitch={() => onSwitch(account.id)}
                                 onRefresh={() => onRefresh(account.id)}

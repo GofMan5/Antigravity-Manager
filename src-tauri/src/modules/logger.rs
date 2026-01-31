@@ -3,6 +3,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 use std::fs;
 use std::path::PathBuf;
 use crate::modules::account::get_data_dir;
+use crate::modules::log_bridge::TauriLogBridgeLayer;
 
 // Custom local timezone time formatter
 struct LocalTimer;
@@ -63,10 +64,12 @@ pub fn init_logger() {
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
     // 5. Initialize global subscriber (use try_init to avoid crash on repeated initialization)
+    // Added TauriLogBridgeLayer for debug console support
     let _ = tracing_subscriber::registry()
         .with(filter_layer)
         .with(console_layer)
         .with(file_layer)
+        .with(TauriLogBridgeLayer::new())
         .try_init();
 
     // Leak _guard to ensure its lifetime lasts until program exit

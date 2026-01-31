@@ -188,7 +188,7 @@ function Dashboard() {
 
     return (
         <motion.div 
-            className="h-full w-full overflow-y-auto bg-zinc-50 dark:bg-zinc-950 p-8 space-y-8 pb-32"
+            className="h-full w-full overflow-y-auto bg-white dark:bg-zinc-900/40 backdrop-blur-xl p-8 space-y-8 pb-32"
             variants={containerVariants}
             initial="hidden"
             animate="visible"

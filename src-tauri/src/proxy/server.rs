@@ -366,10 +366,6 @@ impl AxumServer {
             .route("/proxy/session-bindings/clear", post(admin_clear_proxy_session_bindings))
             .route("/proxy/rate-limits", delete(admin_clear_all_rate_limits))
             .route("/proxy/rate-limits/:accountId", delete(admin_clear_rate_limit))
-            .route(
-                "/proxy/preferred-account",
-                get(admin_get_preferred_account).post(admin_set_preferred_account),
-            )
             .route("/accounts/oauth/prepare", post(admin_prepare_oauth_url))
             .route("/accounts/oauth/start", post(admin_start_oauth_login))
             .route("/accounts/oauth/complete", post(admin_complete_oauth_login))
@@ -1080,27 +1076,6 @@ async fn admin_clear_rate_limit(
     } else {
         StatusCode::NOT_FOUND
     }
-}
-
-async fn admin_get_preferred_account(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let pref = state.token_manager.get_preferred_account().await;
-    Json(pref)
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SetPreferredAccountRequest {
-    account_id: Option<String>,
-}
-
-async fn admin_set_preferred_account(
-    State(state): State<AppState>,
-    Json(payload): Json<SetPreferredAccountRequest>,
-) -> impl IntoResponse {
-    state.token_manager.set_preferred_account(payload.account_id).await;
-    StatusCode::OK
 }
 
 async fn admin_fetch_zai_models(

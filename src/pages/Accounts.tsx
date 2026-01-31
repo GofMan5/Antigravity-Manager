@@ -45,6 +45,19 @@ function Accounts() {
     } = useAccountStore();
     const { config } = useConfigStore();
 
+    // Extract selected accounts for proxy (scheduling mode) - only if badge is enabled
+    const proxySelectedAccountIds = useMemo(() => {
+        // Check if badge display is enabled in settings (default true)
+        if (config?.show_proxy_selected_badge === false) {
+            return new Set<string>();
+        }
+        const scheduling = config?.proxy?.scheduling;
+        if (scheduling?.mode === 'Selected' && scheduling?.selected_accounts) {
+            return new Set(scheduling.selected_accounts);
+        }
+        return new Set<string>();
+    }, [config?.proxy?.scheduling, config?.show_proxy_selected_badge]);
+
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState<FilterType>('all');
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -823,6 +836,7 @@ function Accounts() {
                                     accounts={paginatedAccounts}
                                     selectedIds={selectedIds}
                                     refreshingIds={refreshingIds}
+                                    proxySelectedAccountIds={proxySelectedAccountIds}
                                     onToggleSelect={handleToggleSelect}
                                     onToggleAll={handleToggleAll}
                                     currentAccountId={currentAccount?.id || null}
@@ -844,6 +858,7 @@ function Accounts() {
                                     accounts={paginatedAccounts}
                                     selectedIds={selectedIds}
                                     refreshingIds={refreshingIds}
+                                    proxySelectedAccountIds={proxySelectedAccountIds}
                                     onToggleSelect={handleToggleSelect}
                                     currentAccountId={currentAccount?.id || null}
                                     switchingAccountId={switchingAccountId}

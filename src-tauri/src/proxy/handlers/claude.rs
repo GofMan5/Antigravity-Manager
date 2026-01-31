@@ -966,6 +966,25 @@ pub async fn handle_messages(
             token_manager.mark_rate_limited_async(&email, status_code, retry_after.as_deref(), &error_text, Some(&request_with_mapped.model)).await;
         }
 
+        // [NEW] Handle VALIDATION_REQUIRED (403) - temporarily block account
+        if status_code == 403 && (
+            error_text.contains("VALIDATION_REQUIRED") || 
+            error_text.contains("verify your account") ||
+            error_text.contains("validation_url")
+        ) {
+            tracing::warn!(
+                "[Claude] VALIDATION_REQUIRED detected on account {}, temporarily blocking",
+                email
+            );
+            // Block for 10 minutes (default, configurable via config file)
+            let block_minutes = 10i64;
+            let block_until = chrono::Utc::now().timestamp() + (block_minutes * 60);
+            
+            if let Err(e) = token_manager.set_validation_block_public(&token_lease.account_id, block_until, &error_text).await {
+                tracing::error!("Failed to set validation block: {}", e);
+            }
+        }
+
         // 4. 处理 400 错误 (Thinking 签名失效 或 块顺序错误)
         if status_code == 400
             && !retried_without_thinking

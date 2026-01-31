@@ -1,4 +1,4 @@
-import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, ToggleLeft, ToggleRight, Fingerprint } from 'lucide-react';
+import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, ToggleLeft, ToggleRight, Fingerprint, CheckCircle2 } from 'lucide-react';
 import { Account } from '../../types/account';
 import { getQuotaColor, formatTimeRemaining, getTimeRemainingColor } from '../../utils/format';
 import { cn } from '../../utils/cn';
@@ -11,6 +11,7 @@ interface AccountRowProps {
     isCurrent: boolean;
     isRefreshing: boolean;
     isSwitching?: boolean;
+    isSelectedForProxy?: boolean;
     onSwitch: () => void;
     onRefresh: () => void;
     onViewDevice: () => void;
@@ -22,7 +23,7 @@ interface AccountRowProps {
 
 
 
-function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSwitching = false, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy, onViewDevice }: AccountRowProps) {
+function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSwitching = false, isSelectedForProxy = false, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy, onViewDevice }: AccountRowProps) {
     const { t } = useTranslation();
     const geminiProModel = account.quota?.models.find(m => m.name.toLowerCase() === 'gemini-3-pro-high');
     const geminiFlashModel = account.quota?.models.find(m => m.name.toLowerCase() === 'gemini-3-flash');
@@ -104,10 +105,29 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                             </span>
                         )}
 
+                        {/* Validation Blocked badge (VALIDATION_REQUIRED 403) */}
+                        {account.validation_blocked && account.validation_blocked_until && (
+                            <span
+                                className="px-2 py-0.5 rounded-md bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-yellow-200/50 animate-pulse"
+                                title={account.validation_blocked_reason || t('accounts.validation_blocked_tooltip', 'Account temporarily blocked due to verification required')}
+                            >
+                                <Clock className="w-2.5 h-2.5" />
+                                <span>{formatTimeRemaining(new Date(account.validation_blocked_until * 1000).toISOString())}</span>
+                            </span>
+                        )}
+
                         {account.quota?.is_forbidden && (
                             <span className="px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-red-200/50" title={t('accounts.forbidden_tooltip')}>
                                 <Lock className="w-2.5 h-2.5" />
                                 <span>{t('accounts.forbidden')}</span>
+                            </span>
+                        )}
+
+                        {/* Selected for Proxy badge */}
+                        {isSelectedForProxy && (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-green-500 to-emerald-500 text-white text-[10px] font-bold shadow-sm hover:scale-105 transition-transform cursor-default">
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                                SELECTED
                             </span>
                         )}
 

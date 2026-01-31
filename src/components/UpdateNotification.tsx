@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { X, Download, Sparkles, ArrowRight, Loader2, CheckCircle } from 'lucide-react';
+import { X, Download, Sparkles, Loader2, CheckCircle, ExternalLink } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { request as invoke } from '../utils/request';
 import { useTranslation } from 'react-i18next';
 import { check as tauriCheck } from '@tauri-apps/plugin-updater';
@@ -24,7 +25,6 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
   const { t } = useTranslation();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState>('checking');
   const [downloadProgress, setDownloadProgress] = useState(0);
 
@@ -83,17 +83,15 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
           await tauriRelaunch();
         }, 1500);
       } else {
-        // Native updater found no update (e.g. draft release or updater.json not ready)
-        // Fallback to manual download
         console.warn('Native updater returned null, falling back to manual download');
-        showToast('自动更新包尚未就绪，为您跳转到下载页面...', 'info');
+        showToast(t('update_notification.fallback_manual', 'Auto-update not ready, opening download page...'), 'info');
         setUpdateState('available');
         handleManualDownload();
       }
     } catch (error) {
       console.error('Auto update failed:', error);
-      showToast('自动更新失败，为您跳转到下载页面...', 'error');
-      setUpdateState('available'); // Revert state so user can try again
+      showToast(t('update_notification.auto_failed', 'Auto-update failed, opening download page...'), 'error');
+      setUpdateState('available');
       handleManualDownload();
     }
   };
@@ -106,128 +104,149 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
   };
 
   const handleClose = () => {
-    setIsClosing(true);
     setIsVisible(false);
-    setTimeout(onClose, 400);
+    setTimeout(onClose, 300);
   };
 
   if (!updateInfo && updateState !== 'checking') {
     return null;
   }
 
-  return (
-    <div
-      className={`
-        fixed top-6 right-6 z-[100]
-        transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]
-        ${isVisible && !isClosing ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-4 opacity-0 scale-95'}
-      `}
-    >
-      <div className="
-        relative overflow-hidden
-        w-80 p-5
-        rounded-2xl
-        border border-white/20 dark:border-white/10
-        shadow-[0_8px_32px_0_rgba(31,38,135,0.15)]
-        backdrop-blur-xl
-        bg-white/70 dark:bg-slate-900/60
-        group
-      ">
-        <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/30 transition-colors duration-500"></div>
-        <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-purple-500/20 rounded-full blur-3xl pointer-events-none group-hover:bg-purple-500/30 transition-colors duration-500"></div>
+  const isProcessing = updateState === 'downloading' || updateState === 'ready';
 
-        <div className="relative z-10">
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 shadow-sm">
-                {updateState === 'ready' ? (
-                  <CheckCircle className="w-4 h-4 text-white" />
-                ) : (
-                  <Sparkles className="w-4 h-4 text-white" />
-                )}
+  return (
+    <AnimatePresence>
+      {isVisible && (
+        <motion.div
+          initial={{ opacity: 0, x: 100, scale: 0.95 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          exit={{ opacity: 0, x: 100, scale: 0.95 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          className="fixed top-20 right-6 z-[100] w-80"
+        >
+          <div className="bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Glow Effects */}
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Header */}
+            <div className="relative z-10 flex items-start justify-between p-4 border-b border-white/5">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 shadow-lg shadow-blue-500/25">
+                  {updateState === 'ready' ? (
+                    <CheckCircle className="w-5 h-5 text-white" />
+                  ) : (
+                    <Sparkles className="w-5 h-5 text-white" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm">
+                    {updateState === 'ready'
+                      ? t('update_notification.ready', 'Update Ready')
+                      : t('update_notification.title', 'New Update Available')}
+                  </h3>
+                  {updateInfo && (
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
+                      v{updateInfo.latest_version}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-gray-800 dark:text-white leading-tight">
-                  {updateState === 'ready'
-                    ? t('update_notification.ready', '更新完成')
-                    : t('update_notification.title')}
-                </h3>
-                {updateInfo && (
-                  <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                    v{updateInfo.latest_version}
-                  </p>
-                )}
-              </div>
+
+              {!isProcessing && (
+                <button
+                  onClick={handleClose}
+                  className="p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            {updateState !== 'downloading' && updateState !== 'ready' && (
-              <button
-                onClick={handleClose}
-                className="
-                  p-1 rounded-full 
-                  text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300
-                  hover:bg-black/5 dark:hover:bg-white/10
-                  transition-all duration-200
-                "
-                aria-label={t('common.cancel')}
-              >
-                <X className="w-4 h-4" />
-              </button>
+            {/* Content */}
+            <div className="relative z-10 p-4 space-y-4">
+              {/* Message */}
+              <p className="text-sm text-zinc-400">
+                {updateState === 'downloading' && t('update_notification.downloading', 'Downloading update...')}
+                {updateState === 'ready' && t('update_notification.restarting', 'Restarting application...')}
+                {updateState === 'available' && updateInfo && (
+                  <>
+                    {t('update_notification.message', { current: updateInfo.current_version })}
+                  </>
+                )}
+              </p>
+
+              {/* Progress Bar */}
+              {updateState === 'downloading' && (
+                <div className="space-y-2">
+                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-white/5">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${downloadProgress}%` }}
+                      className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-zinc-500 text-center font-mono">{downloadProgress}%</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              {updateState === 'available' && (
+                <div className="flex gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleAutoUpdate}
+                    className="flex-1 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    {t('update_notification.auto_update', 'Update Now')}
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleManualDownload}
+                    className="p-2.5 bg-zinc-800 text-zinc-400 rounded-xl hover:bg-zinc-700 hover:text-white transition-all"
+                    title={t('update_notification.manual_download', 'Download manually')}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </motion.button>
+                </div>
+              )}
+
+              {/* Processing State */}
+              {isProcessing && (
+                <div className="flex items-center justify-center gap-3 py-2">
+                  {updateState === 'downloading' && (
+                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                  )}
+                  {updateState === 'ready' && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="p-2 rounded-full bg-emerald-500/20"
+                    >
+                      <CheckCircle className="w-5 h-5 text-emerald-400" />
+                    </motion.div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer - Version Comparison */}
+            {updateInfo && updateState === 'available' && (
+              <div className="relative z-10 px-4 pb-4">
+                <div className="flex items-center justify-center gap-2 text-[10px] text-zinc-600">
+                  <span className="font-mono">v{updateInfo.current_version}</span>
+                  <span>→</span>
+                  <span className="font-mono text-emerald-500">v{updateInfo.latest_version}</span>
+                </div>
+              </div>
             )}
           </div>
-
-          <div className="mb-4">
-            <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
-              {updateState === 'downloading' && t('update_notification.downloading', '正在下载更新...')}
-              {updateState === 'ready' && t('update_notification.restarting', '即将重启应用...')}
-              {updateState === 'available' && updateInfo && t('update_notification.message', { current: updateInfo.current_version })}
-            </p>
-          </div>
-
-          {updateState === 'downloading' && (
-            <div className="mb-4">
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${downloadProgress}%` }}
-                />
-              </div>
-              <p className="text-xs text-gray-500 mt-1 text-center">{downloadProgress}%</p>
-            </div>
-          )}
-
-          {updateState === 'available' && (
-            <div className="flex gap-2">
-              <button
-                onClick={handleAutoUpdate}
-                className="
-                  flex-1 group/btn
-                  relative overflow-hidden
-                  bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500
-                  text-white font-medium
-                  py-2.5 px-4 rounded-xl
-                  shadow-lg shadow-blue-500/25
-                  transition-all duration-300
-                  flex items-center justify-center gap-2
-                  active:scale-[0.98]
-                "
-              >
-                <Download className="w-4 h-4" />
-                <span>{t('update_notification.auto_update', '自动更新')}</span>
-                <ArrowRight className="w-4 h-4 opacity-0 -translate-x-2 group-hover/btn:opacity-100 group-hover/btn:translate-x-0 transition-all duration-300" />
-                <div className="absolute inset-0 -translate-x-full group-hover/btn:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent z-20 pointer-events-none" />
-              </button>
-            </div>
-          )}
-
-          {(updateState === 'downloading' || updateState === 'ready') && (
-            <div className="flex items-center justify-center gap-2 text-blue-600 dark:text-blue-400">
-              {updateState === 'downloading' && <Loader2 className="w-4 h-4 animate-spin" />}
-              {updateState === 'ready' && <CheckCircle className="w-4 h-4" />}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

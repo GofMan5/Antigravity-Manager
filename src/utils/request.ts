@@ -39,8 +39,7 @@ const COMMAND_MAPPING: Record<string, { url: string; method: 'GET' | 'POST' | 'D
   'clear_proxy_session_bindings': { url: '/api/proxy/session-bindings/clear', method: 'POST' },
   'clear_proxy_rate_limit': { url: '/api/proxy/rate-limits/:accountId', method: 'DELETE' },
   'clear_all_proxy_rate_limits': { url: '/api/proxy/rate-limits', method: 'DELETE' },
-  'get_preferred_account': { url: '/api/proxy/preferred-account', method: 'GET' },
-  'set_preferred_account': { url: '/api/proxy/preferred-account', method: 'POST' },
+
   'fetch_zai_models': { url: '/api/zai/models/fetch', method: 'POST' },
   'load_config': { url: '/api/config', method: 'GET' },
   'save_config': { url: '/api/config', method: 'POST' },

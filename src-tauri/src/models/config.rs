@@ -18,6 +18,10 @@ pub struct AppConfig {
     #[serde(default)]
     pub auto_launch: bool, // Launch on startup
     #[serde(default)]
+    pub debug_console_enabled: bool, // [NEW] Enable debug console
+    #[serde(default = "default_true_show_badge")]
+    pub show_proxy_selected_badge: bool, // [NEW] Show SELECTED badge for proxy accounts
+    #[serde(default)]
     pub scheduled_warmup: ScheduledWarmupConfig, // [NEW] Scheduled warmup configuration
     #[serde(default)]
     pub quota_protection: QuotaProtectionConfig, // [NEW] Quota protection configuration
@@ -25,6 +29,8 @@ pub struct AppConfig {
     pub pinned_quota_models: PinnedQuotaModelsConfig, // [NEW] Pinned quota models list
     #[serde(default)]
     pub circuit_breaker: CircuitBreakerConfig, // [NEW] Circuit breaker configuration
+    #[serde(default = "default_validation_block_minutes")]
+    pub validation_block_minutes: u32, // [NEW] Minutes to block account after VALIDATION_REQUIRED error
 }
 
 /// Scheduled warmup configuration
@@ -155,6 +161,14 @@ fn default_backoff_steps() -> Vec<u64> {
     vec![60, 300, 1800, 7200]
 }
 
+fn default_true_show_badge() -> bool {
+    true
+}
+
+fn default_validation_block_minutes() -> u32 {
+    10 // Default 10 minutes
+}
+
 impl CircuitBreakerConfig {
     pub fn new() -> Self {
         Self {
@@ -184,10 +198,13 @@ impl AppConfig {
             antigravity_executable: None,
             antigravity_args: None,
             auto_launch: false,
+            debug_console_enabled: false,
+            show_proxy_selected_badge: true,
             scheduled_warmup: ScheduledWarmupConfig::default(),
             quota_protection: QuotaProtectionConfig::default(),
             pinned_quota_models: PinnedQuotaModelsConfig::default(),
             circuit_breaker: CircuitBreakerConfig::default(),
+            validation_block_minutes: default_validation_block_minutes(),
         }
     }
 }
