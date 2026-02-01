@@ -211,19 +211,36 @@ export function useReorderAccounts() {
 
   return useMutation({
     mutationFn: reorderAccounts,
-    onMutate: async () => {
+    onMutate: async (newOrder: string[]) => {
+      // Cancel any outgoing refetches to prevent overwriting optimistic update
       await queryClient.cancelQueries({ queryKey: accountKeys.lists() });
-      const previousAccounts = queryClient.getQueryData(accountKeys.lists());
+      
+      // Snapshot the previous value
+      const previousAccounts = queryClient.getQueryData<Account[]>(accountKeys.lists());
+      
+      // Optimistically update to the new order
+      if (previousAccounts) {
+        const accountMap = new Map(previousAccounts.map(a => [a.id, a]));
+        const reorderedAccounts = newOrder
+          .map(id => accountMap.get(id))
+          .filter((a): a is Account => a !== undefined);
+        
+        // Include any accounts not in newOrder at the end (shouldn't happen, but safety)
+        const remainingAccounts = previousAccounts.filter(a => !newOrder.includes(a.id));
+        
+        queryClient.setQueryData(accountKeys.lists(), [...reorderedAccounts, ...remainingAccounts]);
+      }
+      
       return { previousAccounts };
     },
     onError: (_error, _variables, context) => {
+      // Rollback to previous value on error
       if (context?.previousAccounts) {
         queryClient.setQueryData(accountKeys.lists(), context.previousAccounts);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
-    },
+    // Don't invalidate immediately - the optimistic update is already correct
+    // Backend has already persisted the order, so no need to refetch
   });
 }
 

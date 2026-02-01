@@ -39,10 +39,9 @@ export function useAccounts() {
   return useQuery({
     queryKey: accountKeys.lists(),
     queryFn: listAccounts,
-    select: (data) => data.sort((a, b) => {
-      if (a.disabled !== b.disabled) return a.disabled ? 1 : -1;
-      return a.email.localeCompare(b.email);
-    }),
+    refetchInterval: 60_000, // Auto-refresh every 60 seconds
+    refetchIntervalInBackground: false, // Only when tab is focused
+    // Note: No select/sort here - order is preserved from backend (supports drag-and-drop reorder)
   });
 }
 

@@ -80,7 +80,7 @@ export const AccountsPage = memo(function AccountsPage() {
   } = useAccountsPage();
 
   return (
-    <div className="h-full flex flex-col p-5 gap-4 max-w-7xl mx-auto w-full">
+    <div className="h-full overflow-y-auto p-5 max-w-7xl mx-auto w-full">
       {/* Hidden file input for import */}
       <input
         ref={fileInputRef}
@@ -91,8 +91,8 @@ export const AccountsPage = memo(function AccountsPage() {
       />
 
       {/* Main Card */}
-      <div className="flex-1 min-h-0 relative flex flex-col" ref={containerRef}>
-        <div className="h-full bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden">
+      <div ref={containerRef}>
+        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
           
           {/* Header */}
           <AccountsHeader
@@ -118,9 +118,9 @@ export const AccountsPage = memo(function AccountsPage() {
           />
 
           {/* Content Area */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-0 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+          <div>
             {viewMode === 'list' ? (
-              <div className="p-2 space-y-1">
+              <div className="px-2 py-1">
                 <AccountTable
                   accounts={paginatedAccounts}
                   allAccounts={accounts}
@@ -164,26 +164,26 @@ export const AccountsPage = memo(function AccountsPage() {
               </div>
             )}
           </div>
+
+          {/* Pagination - inside card */}
+          {filteredAccounts.length > 0 && (
+            <div className="border-t border-zinc-200 dark:border-zinc-800 px-3 py-2">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(filteredAccounts.length / ITEMS_PER_PAGE)}
+                onPageChange={handlePageChange}
+                totalItems={filteredAccounts.length}
+                itemsPerPage={ITEMS_PER_PAGE}
+                onPageSizeChange={(newSize) => {
+                  setLocalPageSize(newSize);
+                  handlePageChange(1);
+                }}
+                pageSizeOptions={[10, 20, 50, 100]}
+              />
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Pagination */}
-      {filteredAccounts.length > 0 && (
-        <div className="flex-none">
-          <Pagination
-            currentPage={currentPage}
-            totalPages={Math.ceil(filteredAccounts.length / ITEMS_PER_PAGE)}
-            onPageChange={handlePageChange}
-            totalItems={filteredAccounts.length}
-            itemsPerPage={ITEMS_PER_PAGE}
-            onPageSizeChange={(newSize) => {
-              setLocalPageSize(newSize);
-              handlePageChange(1);
-            }}
-            pageSizeOptions={[10, 20, 50, 100]}
-          />
-        </div>
-      )}
 
       {/* Dialogs */}
       <AccountsDialogs

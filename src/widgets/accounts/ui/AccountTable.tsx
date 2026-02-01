@@ -1,4 +1,6 @@
 // File: src/widgets/accounts/ui/AccountTable.tsx
+// Account list table with drag-and-drop reordering
+
 import { useMemo, useState, memo, useCallback, useRef, useEffect } from 'react';
 import {
     DndContext,
@@ -31,36 +33,24 @@ import {
     ToggleRight,
     Sparkles,
     MoreVertical,
+    Clock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Account } from '@/entities/account';
 import { useTranslation } from 'react-i18next';
-import { cn } from '@/shared/lib';
-import { getQuotaColor, getTimeRemainingColor } from '@/shared/lib';
+import { cn, formatTimeRemaining } from '@/shared/lib';
 import { useConfigStore } from '@/entities/config';
 
 // ===================================
-// Constants
+// Constants - Fixed Column Widths
 // ===================================
-const STORAGE_KEY = 'account-table-columns';
-
-const DEFAULT_COLUMNS = {
+const COLUMN_WIDTHS = {
     drag: 28,
     checkbox: 28,
-    email: 200,
-    quota: 0, // 0 = flex (takes remaining space)
-    actions: 80,
-};
-
-const MIN_WIDTHS = {
-    drag: 28,
-    checkbox: 28,
-    email: 140,
-    quota: 250,
-    actions: 70,
-};
-
-type ColumnKey = keyof typeof DEFAULT_COLUMNS;
+    email: 280,
+    quota: 'flex', // takes remaining space (includes last used)
+    actions: 64,
+} as const;
 
 // ===================================
 // Helper - Model Label (readable)
@@ -79,8 +69,8 @@ function getModelLabel(id: string): string {
     if (lower.includes('claude')) return 'Claude';
     // Gemini 3
     if (lower.includes('gemini-3-pro-image')) return 'G3 Image';
-    if (lower.includes('gemini-3-pro-high')) return 'G3 Pro High';
-    if (lower.includes('gemini-3-pro-low')) return 'G3 Pro Low';
+    if (lower.includes('gemini-3-pro-high')) return 'G3 Pro';
+    if (lower.includes('gemini-3-pro-low')) return 'G3 Low';
     if (lower.includes('gemini-3-pro')) return 'G3 Pro';
     if (lower.includes('gemini-3-flash')) return 'G3 Flash';
     // Gemini 2.5
@@ -95,7 +85,8 @@ function getModelLabel(id: string): string {
     if (lower.includes('gpt-4o')) return 'GPT-4o';
     if (lower.includes('o1-mini')) return 'O1 Mini';
     if (lower.includes('o1-preview')) return 'O1 Preview';
-    // Fallback
+    // Fallback - shorten if too long
+    if (id.length > 12) return id.slice(0, 10) + '…';
     return id;
 }
 
@@ -123,14 +114,6 @@ interface AccountTableProps {
     onReorder?: (accountIds: string[]) => void;
 }
 
-interface ColumnWidths {
-    drag: number;
-    checkbox: number;
-    email: number;
-    quota: number;
-    actions: number;
-}
-
 interface SortableRowProps {
     account: Account;
     selected: boolean;
@@ -138,7 +121,8 @@ interface SortableRowProps {
     isCurrent: boolean;
     isSwitching: boolean;
     isSelectedForProxy?: boolean;
-    columnWidths: ColumnWidths;
+    index: number;
+    totalCount: number;
     onSelect: () => void;
     onSwitch: () => void;
     onRefresh: () => void;
@@ -151,79 +135,10 @@ interface SortableRowProps {
 }
 
 // ===================================
-// Helper - Quota Colors
-// ===================================
-function getColorClass(percentage: number): string {
-    const color = getQuotaColor(percentage);
-    switch (color) {
-        case 'success': return 'bg-emerald-500';
-        case 'warning': return 'bg-amber-500';
-        case 'error': return 'bg-rose-500';
-        default: return 'bg-zinc-500';
-    }
-}
-
-function getTimeColorClass(resetTime: string | undefined): string {
-    const color = getTimeRemainingColor(resetTime);
-    switch (color) {
-        case 'success': return 'text-emerald-500 dark:text-emerald-400';
-        case 'warning': return 'text-amber-500 dark:text-amber-400';
-        default: return 'text-zinc-500';
-    }
-}
-
-// ===================================
-// Column Resizer Component
-// ===================================
-interface ResizerProps {
-    columnKey: ColumnKey;
-    onResize: (key: ColumnKey, delta: number) => void;
-    onResizeEnd: () => void;
-}
-
-function ColumnResizer({ columnKey, onResize, onResizeEnd }: ResizerProps) {
-    const startX = useRef(0);
-    const isDragging = useRef(false);
-
-    const handleMouseDown = useCallback((e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        startX.current = e.clientX;
-        isDragging.current = true;
-
-        const handleMouseMove = (e: MouseEvent) => {
-            if (!isDragging.current) return;
-            const delta = e.clientX - startX.current;
-            startX.current = e.clientX;
-            onResize(columnKey, delta);
-        };
-
-        const handleMouseUp = () => {
-            isDragging.current = false;
-            onResizeEnd();
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-    }, [columnKey, onResize, onResizeEnd]);
-
-    return (
-        <div
-            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500/50 transition-colors z-10 group"
-            onMouseDown={handleMouseDown}
-        >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-zinc-300 dark:bg-zinc-600 group-hover:bg-indigo-500 transition-colors rounded-full" />
-        </div>
-    );
-}
-
-// ===================================
 // Row Component
 // ===================================
 function SortableAccountRow({
-    account, selected, isRefreshing, isCurrent, isSwitching, isSelectedForProxy, columnWidths,
+    account, selected, isRefreshing, isCurrent, isSwitching, isSelectedForProxy, index, totalCount,
     onSelect, onSwitch, onRefresh, onViewDevice, onViewDetails, onExport, onDelete, onToggleProxy, onWarmup
 }: SortableRowProps) {
     const { t } = useTranslation();
@@ -239,7 +154,6 @@ function SortableAccountRow({
         }
     }, []);
 
-    // Add/remove event listener
     useEffect(() => {
         if (menuOpen) {
             document.addEventListener('mousedown', handleClickOutside);
@@ -262,7 +176,7 @@ function SortableAccountRow({
     ];
 
     const lastUsedDate = new Date(account.last_used * 1000);
-    const lastUsedStr = `${lastUsedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${lastUsedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const lastUsedStr = `${lastUsedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${lastUsedDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
 
     const menuItems = [
         { icon: Info, label: t('common.details'), onClick: onViewDetails, color: 'text-zinc-600 dark:text-zinc-400' },
@@ -281,7 +195,7 @@ function SortableAccountRow({
             style={style} 
             id={account.id} 
             className={cn(
-                "group flex items-center px-1 py-1.5 rounded-md transition-all duration-150 w-full",
+                "group flex items-center h-[52px] px-1 rounded-md transition-all duration-150 w-full",
                 "border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900",
                 "hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/80",
                 isCurrent && "border-indigo-300 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-950/30",
@@ -289,14 +203,14 @@ function SortableAccountRow({
             )}
         >
             {/* Drag Handle */}
-            <div style={{ width: columnWidths.drag, minWidth: columnWidths.drag }} className="flex justify-center shrink-0">
+            <div style={{ width: COLUMN_WIDTHS.drag }} className="flex justify-center shrink-0">
                 <div {...attributes} {...listeners} className="p-1 cursor-grab active:cursor-grabbing text-zinc-400 dark:text-zinc-600 hover:text-zinc-600 dark:hover:text-zinc-400 transition-colors">
                     <GripVertical className="w-4 h-4" />
                 </div>
             </div>
 
             {/* Checkbox */}
-            <div style={{ width: columnWidths.checkbox, minWidth: columnWidths.checkbox }} className="flex justify-center shrink-0">
+            <div style={{ width: COLUMN_WIDTHS.checkbox }} className="flex justify-center shrink-0">
                 <div 
                     className={cn(
                         "w-4 h-4 rounded border flex items-center justify-center transition-all cursor-pointer",
@@ -311,8 +225,8 @@ function SortableAccountRow({
             </div>
 
             {/* Email & Account Info */}
-            <div style={{ width: columnWidths.email, minWidth: MIN_WIDTHS.email }} className="flex flex-col min-w-0 px-2 shrink-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
+            <div style={{ width: COLUMN_WIDTHS.email }} className="flex flex-col min-w-0 px-2 shrink-0">
+                <div className="flex items-center gap-1 mb-0.5">
                     {isSelectedForProxy && <span className="px-1 py-0.5 rounded bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 text-[8px] font-bold">SEL</span>}
                     {(() => {
                         const tier = (account.quota?.subscription_tier || '').toLowerCase();
@@ -336,35 +250,168 @@ function SortableAccountRow({
                 )}
             </div>
 
-            {/* Quota Bars + Last Used */}
-            <div className="flex-1 min-w-0 px-1">
-                <div className="flex items-center gap-2">
-                    {/* Quota bars */}
-                    <div className="flex-1 space-y-0.5 min-w-0">
-                        {modelsToShow.slice(0, 3).map(modelId => {
-                            const m = account.quota?.models.find(m => m.name === modelId);
-                            if (!m) return null;
-                            
-                            return (
-                                <div key={modelId} className="flex items-center gap-1 text-[9px]" title={m.reset_time ? `Reset: ${new Date(m.reset_time).toLocaleString()}` : undefined}>
-                                    <span className="w-16 font-medium text-zinc-500 dark:text-zinc-400 shrink-0 text-right truncate">{getModelLabel(modelId)}</span>
-                                    <div className="flex-1 h-1 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                                        <div className={cn("h-full rounded-full", getColorClass(m.percentage))} style={{ width: `${m.percentage}%` }} />
-                                    </div>
-                                    <span className={cn("w-6 font-mono text-right shrink-0", getTimeColorClass(m.reset_time))}>{m.percentage}%</span>
+            {/* Quota Models + Last Used */}
+            <div className="flex-1 min-w-0 px-2 flex items-center gap-3">
+                {/* Quota pills */}
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                    {modelsToShow.slice(0, 4).map(modelId => {
+                        const m = account.quota?.models.find(m => m.name === modelId);
+                        if (!m) return (
+                            <div key={modelId} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800/50 text-[8px] text-zinc-400 shrink-0">
+                                <span className="font-medium">{getModelLabel(modelId)}</span>
+                                <span>—</span>
+                            </div>
+                        );
+                        
+                        const timeRemaining = formatTimeRemaining(m.reset_time);
+                        const isLow = m.percentage < 20;
+                        const isMedium = m.percentage >= 20 && m.percentage < 50;
+                        
+                        return (
+                            <div 
+                                key={modelId} 
+                                className={cn(
+                                    "flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium shrink-0",
+                                    "border",
+                                    isLow && "bg-rose-50 dark:bg-rose-950/40 border-rose-200/60 dark:border-rose-800/40",
+                                    isMedium && "bg-amber-50 dark:bg-amber-950/40 border-amber-200/60 dark:border-amber-800/40",
+                                    !isLow && !isMedium && "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/60 dark:border-emerald-800/40"
+                                )}
+                                title={`${m.percentage}% • Reset: ${m.reset_time ? new Date(m.reset_time).toLocaleString() : '—'}`}
+                            >
+                                {/* Model name */}
+                                <span className={cn(
+                                    "font-semibold",
+                                    isLow && "text-rose-600 dark:text-rose-400",
+                                    isMedium && "text-amber-600 dark:text-amber-400",
+                                    !isLow && !isMedium && "text-emerald-600 dark:text-emerald-400"
+                                )}>
+                                    {getModelLabel(modelId)}
+                                </span>
+                                
+                                {/* Percentage */}
+                                <span className={cn(
+                                    "font-mono font-bold tabular-nums",
+                                    isLow && "text-rose-700 dark:text-rose-300",
+                                    isMedium && "text-amber-700 dark:text-amber-300",
+                                    !isLow && !isMedium && "text-emerald-700 dark:text-emerald-300"
+                                )}>
+                                    {m.percentage}%
+                                </span>
+                                
+                                {/* Reset time - compact */}
+                                <span className={cn(
+                                    "flex items-center gap-0.5 text-[8px] opacity-70",
+                                    isLow && "text-rose-500 dark:text-rose-400",
+                                    isMedium && "text-amber-500 dark:text-amber-400",
+                                    !isLow && !isMedium && "text-emerald-500 dark:text-emerald-400"
+                                )}>
+                                    <Clock className="w-2 h-2" />
+                                    {timeRemaining}
+                                </span>
+                            </div>
+                        );
+                    })}
+                    
+                    {/* Show "+N more" if more than 4 models - with hover tooltip */}
+                    {modelsToShow.length > 4 && (() => {
+                        // Smart positioning: show tooltip UP if in bottom half, DOWN if in top half
+                        const showAbove = index >= totalCount / 2;
+                        
+                        return (
+                            <div className="relative group/more shrink-0">
+                                <div className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[8px] text-zinc-500 font-medium cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+                                    +{modelsToShow.length - 4}
                                 </div>
-                            );
-                        })}
-                    </div>
-                    {/* Last used */}
-                    <div className="shrink-0 text-[9px] text-zinc-400 dark:text-zinc-500 whitespace-nowrap">
-                        {lastUsedStr}
-                    </div>
+                                
+                                {/* Hover tooltip - smart positioning based on row position */}
+                                <div className={cn(
+                                    "absolute left-0 z-[100] opacity-0 invisible group-hover/more:opacity-100 group-hover/more:visible transition-all duration-150 pointer-events-none group-hover/more:pointer-events-auto",
+                                    showAbove ? "bottom-full mb-1" : "top-full mt-1"
+                                )}>
+                                    <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 p-2 min-w-[280px]">
+                                        <div className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1.5 px-1">
+                                            More Models
+                                        </div>
+                                        <div className="space-y-1">
+                                            {modelsToShow.slice(4).map(modelId => {
+                                                const m = account.quota?.models.find(m => m.name === modelId);
+                                                // Format full model name for display
+                                                const fullName = modelId
+                                                    .replace(/-/g, ' ')
+                                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                                
+                                                if (!m) return (
+                                                    <div key={modelId} className="flex items-center justify-between gap-2 px-1.5 py-1 rounded bg-zinc-50 dark:bg-zinc-900/50 text-[9px]">
+                                                        <span className="font-medium text-zinc-500">{fullName}</span>
+                                                        <span className="text-zinc-400">—</span>
+                                                    </div>
+                                                );
+                                                
+                                                const timeRemaining = formatTimeRemaining(m.reset_time);
+                                                const isLow = m.percentage < 20;
+                                                const isMedium = m.percentage >= 20 && m.percentage < 50;
+                                                
+                                                return (
+                                                    <div 
+                                                        key={modelId}
+                                                        className={cn(
+                                                            "flex items-center justify-between gap-3 px-2 py-1.5 rounded text-[9px]",
+                                                            isLow && "bg-rose-50 dark:bg-rose-950/40",
+                                                            isMedium && "bg-amber-50 dark:bg-amber-950/40",
+                                                            !isLow && !isMedium && "bg-emerald-50 dark:bg-emerald-950/40"
+                                                        )}
+                                                    >
+                                                        {/* Full model name */}
+                                                        <span className={cn(
+                                                            "font-medium",
+                                                            isLow && "text-rose-600 dark:text-rose-400",
+                                                            isMedium && "text-amber-600 dark:text-amber-400",
+                                                            !isLow && !isMedium && "text-emerald-600 dark:text-emerald-400"
+                                                        )}>
+                                                            {fullName}
+                                                        </span>
+                                                        
+                                                        {/* Right side: percentage + time */}
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            <span className={cn(
+                                                                "font-mono font-bold tabular-nums",
+                                                                isLow && "text-rose-700 dark:text-rose-300",
+                                                                isMedium && "text-amber-700 dark:text-amber-300",
+                                                                !isLow && !isMedium && "text-emerald-700 dark:text-emerald-300"
+                                                            )}>
+                                                                {m.percentage}%
+                                                            </span>
+                                                            
+                                                            <span className={cn(
+                                                                "flex items-center gap-0.5 text-[8px]",
+                                                                isLow && "text-rose-500 dark:text-rose-400",
+                                                                isMedium && "text-amber-500 dark:text-amber-400",
+                                                                !isLow && !isMedium && "text-emerald-500 dark:text-emerald-400"
+                                                            )}>
+                                                                <Clock className="w-2 h-2" />
+                                                                {timeRemaining}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+                </div>
+                
+                {/* Last Used - right side */}
+                <div className="shrink-0 text-[9px] text-zinc-400 dark:text-zinc-500 font-mono whitespace-nowrap" title={lastUsedDate.toLocaleString()}>
+                    {lastUsedStr}
                 </div>
             </div>
 
             {/* Actions - Dropdown Menu */}
-            <div style={{ width: columnWidths.actions, minWidth: MIN_WIDTHS.actions }} className="flex items-center justify-end shrink-0 relative" ref={menuRef}>
+            <div style={{ width: COLUMN_WIDTHS.actions }} className="flex items-center justify-center shrink-0 relative" ref={menuRef}>
                 <button 
                     onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
                     className={cn(
@@ -378,34 +425,42 @@ function SortableAccountRow({
                 </button>
 
                 <AnimatePresence>
-                    {menuOpen && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: -5 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: -5 }}
-                            transition={{ duration: 0.15 }}
-                            className="absolute right-0 top-full mt-1 z-50 min-w-[180px] py-1 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            {menuItems.map((item, idx) => (
-                                <button
-                                    key={idx}
-                                    onClick={() => { item.onClick(); setMenuOpen(false); }}
-                                    disabled={item.disabled}
-                                    className={cn(
-                                        "w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors disabled:opacity-50",
-                                        item.danger 
-                                            ? "hover:bg-rose-50 dark:hover:bg-rose-500/10" 
-                                            : "hover:bg-zinc-100 dark:hover:bg-zinc-700/50",
-                                        item.color
-                                    )}
-                                >
-                                    <item.icon className="w-4 h-4" />
-                                    <span className="text-zinc-700 dark:text-zinc-200">{item.label}</span>
-                                </button>
-                            ))}
-                        </motion.div>
-                    )}
+                    {menuOpen && (() => {
+                        // Smart positioning: show menu UP if in bottom half, DOWN if in top half
+                        const showAbove = index >= totalCount / 2;
+                        
+                        return (
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: showAbove ? 5 : -5 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: showAbove ? 5 : -5 }}
+                                transition={{ duration: 0.12 }}
+                                className={cn(
+                                    "absolute right-0 z-50 min-w-[140px] py-0.5 bg-white dark:bg-zinc-800 rounded-md shadow-lg border border-zinc-200 dark:border-zinc-700",
+                                    showAbove ? "bottom-full mb-1" : "top-full mt-1"
+                                )}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {menuItems.map((item, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => { item.onClick(); setMenuOpen(false); }}
+                                        disabled={item.disabled}
+                                        className={cn(
+                                            "w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors disabled:opacity-50",
+                                            item.danger 
+                                                ? "hover:bg-rose-50 dark:hover:bg-rose-500/10" 
+                                                : "hover:bg-zinc-100 dark:hover:bg-zinc-700/50",
+                                            item.color
+                                        )}
+                                    >
+                                        <item.icon className="w-3.5 h-3.5" />
+                                        <span className="text-zinc-700 dark:text-zinc-200">{item.label}</span>
+                                    </button>
+                                ))}
+                            </motion.div>
+                        );
+                    })()}
                 </AnimatePresence>
             </div>
         </div>
@@ -428,42 +483,6 @@ export const AccountTable = memo(function AccountTable({
     const { t } = useTranslation();
     const [activeId, setActiveId] = useState<string | null>(null);
     const [draggedWidth, setDraggedWidth] = useState<number | undefined>(undefined);
-
-    // Column widths state with localStorage persistence
-    const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                return { ...DEFAULT_COLUMNS, ...parsed };
-            }
-        } catch {
-            // Ignore parse errors
-        }
-        return DEFAULT_COLUMNS;
-    });
-
-    const handleResize = useCallback((key: ColumnKey, delta: number) => {
-        setColumnWidths(prev => {
-            // quota resizer: drag left = shrink quota = grow actions (negative delta = positive actions change)
-            if (key === 'quota') {
-                const newActionsWidth = Math.max(MIN_WIDTHS.actions, prev.actions - delta);
-                return { ...prev, actions: newActionsWidth };
-            }
-            const newWidth = Math.max(MIN_WIDTHS[key], prev[key] + delta);
-            return { ...prev, [key]: newWidth };
-        });
-    }, []);
-
-    const handleResizeEnd = useCallback(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(columnWidths));
-    }, [columnWidths]);
-
-    // Reset columns on double click
-    const handleResetColumns = useCallback(() => {
-        setColumnWidths(DEFAULT_COLUMNS);
-        localStorage.removeItem(STORAGE_KEY);
-    }, []);
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -519,13 +538,9 @@ export const AccountTable = memo(function AccountTable({
         >
             <div className="w-full overflow-hidden">
                 {/* Header Row */}
-                <div 
-                    className="flex items-center px-1 py-2 mb-1 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-700 sticky top-0 z-20 select-none"
-                    onDoubleClick={handleResetColumns}
-                    title="Double-click to reset column widths"
-                >
-                    <div style={{ width: columnWidths.drag, minWidth: columnWidths.drag }} className="text-center shrink-0">#</div>
-                    <div style={{ width: columnWidths.checkbox, minWidth: columnWidths.checkbox }} className="flex justify-center shrink-0">
+                <div className="flex items-center h-8 px-1 mb-1 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-700 sticky top-0 z-20">
+                    <div style={{ width: COLUMN_WIDTHS.drag }} className="text-center shrink-0">#</div>
+                    <div style={{ width: COLUMN_WIDTHS.checkbox }} className="flex justify-center shrink-0">
                         <div 
                             className={cn(
                                 "w-3.5 h-3.5 rounded border flex items-center justify-center transition-all cursor-pointer",
@@ -538,22 +553,20 @@ export const AccountTable = memo(function AccountTable({
                             {accounts.length > 0 && selectedIds.size === accounts.length && <div className="w-2 h-2 rounded-sm bg-white" />}
                         </div>
                     </div>
-                    <div style={{ width: columnWidths.email, minWidth: MIN_WIDTHS.email }} className="relative px-1 shrink-0">
+                    <div style={{ width: COLUMN_WIDTHS.email }} className="px-2 shrink-0">
                         {t('accounts.table.email')}
-                        <ColumnResizer columnKey="email" onResize={handleResize} onResizeEnd={handleResizeEnd} />
                     </div>
-                    <div className="flex-1 px-1 relative">
+                    <div className="flex-1 px-2">
                         {t('accounts.table.quota')}
-                        <ColumnResizer columnKey="quota" onResize={handleResize} onResizeEnd={handleResizeEnd} />
                     </div>
-                    <div style={{ width: columnWidths.actions, minWidth: MIN_WIDTHS.actions }} className="text-center shrink-0">
+                    <div style={{ width: COLUMN_WIDTHS.actions }} className="text-center shrink-0">
                         {t('accounts.table.actions')}
                     </div>
                 </div>
 
                 <SortableContext items={accountIds} strategy={verticalListSortingStrategy}>
                     <div className="space-y-0.5">
-                        {accounts.map((account) => (
+                        {accounts.map((account, idx) => (
                             <SortableAccountRow
                                 key={account.id}
                                 account={account}
@@ -562,7 +575,8 @@ export const AccountTable = memo(function AccountTable({
                                 isCurrent={account.id === currentAccountId}
                                 isSwitching={account.id === switchingAccountId}
                                 isSelectedForProxy={proxySelectedAccountIds?.has(account.id) || false}
-                                columnWidths={columnWidths}
+                                index={idx}
+                                totalCount={accounts.length}
                                 onSelect={() => onToggleSelect(account.id)}
                                 onSwitch={() => onSwitch(account.id)}
                                 onRefresh={() => onRefresh(account.id)}
@@ -583,17 +597,17 @@ export const AccountTable = memo(function AccountTable({
                 {activeAccount ? (
                     <div 
                         style={{ width: draggedWidth }}
-                        className="flex items-center px-1 py-1.5 rounded-md shadow-lg border border-indigo-400 dark:border-indigo-500 bg-white dark:bg-zinc-900"
+                        className="flex items-center h-[52px] px-1 rounded-md shadow-lg border border-indigo-400 dark:border-indigo-500 bg-white dark:bg-zinc-900"
                     >
-                        <div style={{ width: columnWidths.drag }} className="flex justify-center shrink-0">
+                        <div style={{ width: COLUMN_WIDTHS.drag }} className="flex justify-center shrink-0">
                             <div className="p-1 text-indigo-500 cursor-grabbing">
                                 <GripVertical className="w-4 h-4" />
                             </div>
                         </div>
-                        <div style={{ width: columnWidths.checkbox }} className="flex justify-center shrink-0">
+                        <div style={{ width: COLUMN_WIDTHS.checkbox }} className="flex justify-center shrink-0">
                             <div className="w-4 h-4 rounded border border-zinc-300 dark:border-zinc-600 opacity-50" />
                         </div>
-                        <div style={{ width: columnWidths.email }} className="px-2 shrink-0">
+                        <div style={{ width: COLUMN_WIDTHS.email }} className="px-2 shrink-0">
                             <span className="text-xs font-medium text-indigo-600 dark:text-indigo-300 truncate block">
                                 {activeAccount.email}
                             </span>

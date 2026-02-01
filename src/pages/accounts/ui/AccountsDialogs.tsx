@@ -66,8 +66,7 @@ export const AccountsDialogs = memo(function AccountsDialogs({
       />
       {deviceAccount && (
         <DeviceFingerprintDialog
-          accountId={deviceAccount.id}
-          accountEmail={deviceAccount.email}
+          account={deviceAccount}
           onClose={onCloseDevice}
         />
       )}
