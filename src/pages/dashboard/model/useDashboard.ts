@@ -8,7 +8,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 
 import { invoke } from '@/shared/api';
 import { isTauri } from '@/shared/lib';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 import {
   useAccounts,
   useCurrentAccount,

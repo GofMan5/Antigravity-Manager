@@ -5,7 +5,7 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { User, MessageCircle, Github, RefreshCw } from 'lucide-react';
 
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 
 interface AboutTabProps {
   appVersion: string;

@@ -7,7 +7,7 @@ import { getVersion } from '@tauri-apps/api/app';
 
 import { invoke } from '@/shared/api';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 import type { AppConfig } from '@/entities/config';
 import { DEFAULT_CONFIG, type SectionId } from '../lib';
 

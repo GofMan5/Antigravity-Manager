@@ -1,3 +1,6 @@
+// File: src/shared/ui/toast/Toast.tsx
+// Toast notification component
+
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-react';
 
@@ -11,17 +14,16 @@ export interface ToastProps {
     onClose: (id: string) => void;
 }
 
-const Toast = ({ id, message, type, duration = 3000, onClose }: ToastProps) => {
+export const Toast = ({ id, message, type, duration = 3000, onClose }: ToastProps) => {
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
-        // Exciting entrance
         requestAnimationFrame(() => setIsVisible(true));
 
         if (duration > 0) {
             const timer = setTimeout(() => {
                 setIsVisible(false);
-                setTimeout(() => onClose(id), 300); // Wait for transition
+                setTimeout(() => onClose(id), 300);
             }, duration);
             return () => clearTimeout(timer);
         }
@@ -38,10 +40,10 @@ const Toast = ({ id, message, type, duration = 3000, onClose }: ToastProps) => {
 
     const getStyles = () => {
         switch (type) {
-            case 'success': return 'border-green-100 dark:border-green-900/30 bg-white dark:bg-base-100';
-            case 'error': return 'border-red-100 dark:border-red-900/30 bg-white dark:bg-base-100';
-            case 'warning': return 'border-yellow-100 dark:border-yellow-900/30 bg-white dark:bg-base-100';
-            case 'info': default: return 'border-blue-100 dark:border-blue-900/30 bg-white dark:bg-base-100';
+            case 'success': return 'border-green-200 dark:border-green-900/30 bg-white dark:bg-zinc-900';
+            case 'error': return 'border-red-200 dark:border-red-900/30 bg-white dark:bg-zinc-900';
+            case 'warning': return 'border-yellow-200 dark:border-yellow-900/30 bg-white dark:bg-zinc-900';
+            case 'info': default: return 'border-blue-200 dark:border-blue-900/30 bg-white dark:bg-zinc-900';
         }
     };
 
@@ -51,10 +53,10 @@ const Toast = ({ id, message, type, duration = 3000, onClose }: ToastProps) => {
             style={{ minWidth: '300px' }}
         >
             {getIcon()}
-            <p className="flex-1 text-sm font-medium text-gray-700 dark:text-base-content">{message}</p>
+            <p className="flex-1 text-sm font-medium text-zinc-700 dark:text-zinc-200">{message}</p>
             <button
                 onClick={() => { setIsVisible(false); setTimeout(() => onClose(id), 300); }}
-                className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
             >
                 <X className="w-4 h-4" />
             </button>

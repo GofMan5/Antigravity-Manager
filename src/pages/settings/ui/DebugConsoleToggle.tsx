@@ -7,7 +7,7 @@ import { Terminal } from 'lucide-react';
 
 import { Switch, Label } from '@/shared/ui';
 import { useDebugConsole } from '@/widgets/debug-console';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 
 export const DebugConsoleToggle = memo(function DebugConsoleToggle() {
   const { t } = useTranslation();

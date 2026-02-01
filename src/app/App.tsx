@@ -14,7 +14,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useDebugConsole } from '@/widgets/debug-console';
 import { isTauri } from '@/shared/lib';
 import { invoke } from '@/shared/api';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 import { accountKeys } from '@/features/accounts';
 
 // Global components

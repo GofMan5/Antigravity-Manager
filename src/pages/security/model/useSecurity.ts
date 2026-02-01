@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatDistanceToNow } from 'date-fns';
 import { invoke } from '@/shared/api';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 import type {
     IpBlacklistEntry,
     IpWhitelistEntry,

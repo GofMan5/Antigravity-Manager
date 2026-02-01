@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { copyToClipboard } from '../../utils/clipboard';
 import { invoke } from '@/shared/api';
-import { showToast } from '../common/ToastContainer';
+import { showToast } from '@/shared/ui';
 import ModalDialog from '../common/ModalDialog';
 import { cn } from '@/shared/lib';
 

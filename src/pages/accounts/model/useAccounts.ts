@@ -8,7 +8,7 @@ import { join } from '@tauri-apps/api/path';
 
 import { invoke } from '@/shared/api';
 import { isTauri } from '@/shared/lib';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 import {
   useAccounts as useAccountsQuery,
   useCurrentAccount,

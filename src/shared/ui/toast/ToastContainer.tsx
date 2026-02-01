@@ -1,6 +1,9 @@
+// File: src/shared/ui/toast/ToastContainer.tsx
+// Toast container with global showToast function
+
 import { useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import Toast, { ToastType } from './Toast';
+import { Toast, ToastType } from './Toast';
 
 export interface ToastItem {
     id: string;
@@ -20,7 +23,7 @@ export const showToast = (message: string, type: ToastType = 'info', duration: n
     }
 };
 
-const ToastContainer = () => {
+export const ToastContainer = () => {
     const [toasts, setToasts] = useState<ToastItem[]>([]);
 
     const addToast = useCallback((message: string, type: ToastType, duration?: number) => {

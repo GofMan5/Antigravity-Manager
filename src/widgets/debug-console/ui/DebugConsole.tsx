@@ -24,7 +24,7 @@ import { cn, copyToClipboard } from '@/shared/lib';
 import { useDebugConsole, LogEntry, LogLevel } from '../model/store';
 
 // Import toast from shared (will be migrated)
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 
 const LEVEL_CONFIG: Record<LogLevel, { icon: React.ReactNode; color: string; bg: string }> = {
     ERROR: { 

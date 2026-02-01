@@ -2,7 +2,7 @@ import { Outlet } from 'react-router-dom';
 
 import Navbar from './Navbar';
 import BackgroundTaskRunner from '../common/BackgroundTaskRunner';
-import ToastContainer from '../common/ToastContainer';
+import { ToastContainer } from '@/shared/ui';
 
 function Layout() {
     return (

@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { invoke } from '@/shared/api';
 import { copyToClipboard } from '@/shared/lib';
 import type { AppConfig, ProxyConfig, StickySessionConfig, ExperimentalConfig, CircuitBreakerConfig } from '@/entities/config';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 import { useProxyModels } from '@/hooks/useProxyModels';
 import type { ProxyStatus, CloudflaredStatus, ProtocolType, CloudflaredMode } from '../lib/constants';
 import { MODEL_PRESETS } from '../lib/constants';

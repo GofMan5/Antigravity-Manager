@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { check as tauriCheck } from '@tauri-apps/plugin-updater';
 import { relaunch as tauriRelaunch } from '@tauri-apps/plugin-process';
 import { isTauri } from '@/shared/lib';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 
 interface UpdateInfo {
   has_update: boolean;

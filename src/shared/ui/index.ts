@@ -11,3 +11,4 @@ export { Switch } from './switch';
 export { Label } from './label';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 export { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './select';
+export { Toast, ToastContainer, showToast, type ToastType, type ToastItem } from './toast';

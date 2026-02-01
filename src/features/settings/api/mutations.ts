@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@/shared/api';
 import type { AppConfig } from '@/entities/config';
 import { settingsKeys } from './keys';
-import { showToast } from '@/components/common/ToastContainer';
+import { showToast } from '@/shared/ui';
 import { useTranslation } from 'react-i18next';
 
 // Mutations
