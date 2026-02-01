@@ -1,0 +1,304 @@
+//! Axum Server Module
+//!
+//! This module provides the HTTP server implementation for the proxy service.
+//! It has been refactored from a monolithic 2000+ line file into organized submodules.
+
+pub mod admin;
+pub mod oauth;
+pub mod routes;
+pub mod types;
+
+// Re-export main types for external use
+pub use types::AppState;
+
+use crate::proxy::TokenManager;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
+use tokio::sync::oneshot;
+use tokio::sync::RwLock;
+use tracing::{debug, error};
+
+/// Axum server instance
+#[derive(Clone)]
+pub struct AxumServer {
+    shutdown_tx: Arc<tokio::sync::Mutex<Option<oneshot::Sender<()>>>>,
+    custom_mapping: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
+    proxy_state: Arc<tokio::sync::RwLock<crate::proxy::config::UpstreamProxyConfig>>,
+    security_state: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
+    pub security_monitor_state: Arc<RwLock<crate::proxy::config::SecurityMonitorConfig>>,
+    zai_state: Arc<RwLock<crate::proxy::ZaiConfig>>,
+    experimental: Arc<RwLock<crate::proxy::config::ExperimentalConfig>>,
+    debug_logging: Arc<RwLock<crate::proxy::config::DebugLoggingConfig>>,
+    pub cloudflared_state: Arc<crate::commands::cloudflared::CloudflaredState>,
+    pub is_running: Arc<RwLock<bool>>,
+    pub upstream: Arc<crate::proxy::upstream::client::UpstreamClient>,
+}
+
+impl AxumServer {
+    /// Update model mapping (hot-reload)
+    pub async fn update_mapping(&self, config: &crate::proxy::config::ProxyConfig) {
+        {
+            let mut m = self.custom_mapping.write().await;
+            *m = config.custom_mapping.clone();
+        }
+        tracing::debug!("Model mapping (Custom) hot-reloaded");
+    }
+
+    /// Update upstream proxy configuration
+    pub async fn update_proxy(&self, new_config: crate::proxy::config::UpstreamProxyConfig) {
+        let mut proxy = self.proxy_state.write().await;
+        *proxy = new_config.clone();
+
+        // [FIX] Also update underlying reqwest Client
+        self.upstream.rebuild_client(Some(new_config)).await;
+
+        tracing::info!("Upstream proxy config hot-reloaded (including HTTP Client)");
+    }
+
+    /// Update security configuration
+    pub async fn update_security(&self, config: &crate::proxy::config::ProxyConfig) {
+        let mut sec = self.security_state.write().await;
+        *sec = crate::proxy::ProxySecurityConfig::from_proxy_config(config);
+        tracing::info!("Proxy security config hot-reloaded");
+    }
+
+    /// Update z.ai configuration
+    pub async fn update_zai(&self, config: &crate::proxy::config::ProxyConfig) {
+        let mut zai = self.zai_state.write().await;
+        *zai = config.zai.clone();
+        tracing::info!("z.ai config hot-reloaded");
+    }
+
+    /// Update experimental configuration
+    pub async fn update_experimental(&self, config: &crate::proxy::config::ProxyConfig) {
+        let mut exp = self.experimental.write().await;
+        *exp = config.experimental.clone();
+        tracing::info!("Experimental config hot-reloaded");
+    }
+
+    /// Update debug logging configuration
+    pub async fn update_debug_logging(&self, config: &crate::proxy::config::ProxyConfig) {
+        let mut dbg_cfg = self.debug_logging.write().await;
+        *dbg_cfg = config.debug_logging.clone();
+        tracing::info!("Debug logging config hot-reloaded");
+    }
+
+    /// Update security monitor config (IP blacklist/whitelist)
+    pub async fn update_security_monitor(&self, config: &crate::proxy::config::ProxyConfig) {
+        let mut sec_mon = self.security_monitor_state.write().await;
+        *sec_mon = config.security_monitor.clone();
+        tracing::info!("[Security] IP filtering config hot-reloaded");
+    }
+
+    /// Set running state
+    pub async fn set_running(&self, running: bool) {
+        let mut r = self.is_running.write().await;
+        *r = running;
+        tracing::info!("Proxy service running state updated to: {}", running);
+    }
+
+    /// Start the Axum server
+    pub async fn start(
+        host: String,
+        port: u16,
+        token_manager: Arc<TokenManager>,
+        custom_mapping: std::collections::HashMap<String, String>,
+        _request_timeout: u64,
+        upstream_proxy: crate::proxy::config::UpstreamProxyConfig,
+        security_config: crate::proxy::ProxySecurityConfig,
+        zai_config: crate::proxy::ZaiConfig,
+        monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
+        experimental_config: crate::proxy::config::ExperimentalConfig,
+        debug_logging: crate::proxy::config::DebugLoggingConfig,
+        integration: crate::modules::integration::SystemManager,
+        cloudflared_state: Arc<crate::commands::cloudflared::CloudflaredState>,
+    ) -> Result<(Self, tokio::task::JoinHandle<()>), String> {
+        let custom_mapping_state = Arc::new(tokio::sync::RwLock::new(custom_mapping));
+        let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
+        let security_state = Arc::new(RwLock::new(security_config));
+        let zai_state = Arc::new(RwLock::new(zai_config));
+        let provider_rr = Arc::new(AtomicUsize::new(0));
+        let zai_vision_mcp_state =
+            Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
+        let experimental_state = Arc::new(RwLock::new(experimental_config));
+        let debug_logging_state = Arc::new(RwLock::new(debug_logging));
+        let is_running_state = Arc::new(RwLock::new(true));
+
+        // Create upstream client once and share between AppState and AxumServer
+        let upstream_client = Arc::new(crate::proxy::upstream::client::UpstreamClient::new(Some(
+            upstream_proxy.clone(),
+        )));
+
+        let state = AppState {
+            token_manager: token_manager.clone(),
+            custom_mapping: custom_mapping_state.clone(),
+            request_timeout: 300, // 5 minutes
+            thought_signature_map: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            upstream_proxy: proxy_state.clone(),
+            upstream: upstream_client.clone(),
+            zai: zai_state.clone(),
+            provider_rr: provider_rr.clone(),
+            zai_vision_mcp: zai_vision_mcp_state,
+            monitor: monitor.clone(),
+            experimental: experimental_state.clone(),
+            debug_logging: debug_logging_state.clone(),
+            switching: Arc::new(RwLock::new(false)),
+            integration: integration.clone(),
+            account_service: Arc::new(crate::modules::account_service::AccountService::new(
+                integration.clone(),
+            )),
+            security: security_state.clone(),
+            cloudflared_state: cloudflared_state.clone(),
+            is_running: is_running_state.clone(),
+            port,
+        };
+
+        // Build routes
+        use crate::proxy::middleware::{
+            admin_auth_middleware, auth_middleware, cors_layer, ip_filter_middleware,
+            monitor_middleware, service_status_middleware, SecurityState,
+        };
+
+        // Create security monitor state for IP filtering
+        let security_monitor_state: SecurityState = Arc::new(RwLock::new(
+            crate::proxy::config::SecurityMonitorConfig::default(),
+        ));
+
+        // Initialize security database
+        if let Err(e) = crate::modules::security_db::init_db() {
+            tracing::warn!("[Security] Failed to initialize security database: {}", e);
+        }
+
+        // 1. Build proxy routes (AI endpoints with auth)
+        let proxy_routes = routes::build_proxy_routes()
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                auth_middleware,
+            ))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                monitor_middleware,
+            ));
+
+        // 2. Build admin routes (forced auth)
+        let admin_routes = routes::build_admin_routes().layer(
+            axum::middleware::from_fn_with_state(state.clone(), admin_auth_middleware),
+        );
+
+        // 3. Combine and apply global layers
+        let max_body_size: usize = std::env::var("ABV_MAX_BODY_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(100 * 1024 * 1024); // Default 100MB
+        tracing::info!("Request body size limit: {} MB", max_body_size / 1024 / 1024);
+
+        let app = axum::Router::new()
+            .nest("/api", admin_routes)
+            .merge(proxy_routes)
+            // Public routes (no auth)
+            .route("/auth/callback", axum::routing::get(oauth::handle_oauth_callback))
+            // Health check endpoint (no IP filter)
+            .route("/healthz", axum::routing::get(routes::health_check))
+            // Apply global monitoring and status layers
+            .layer(axum::middleware::from_fn(ip_filter_middleware))
+            .layer(axum::Extension(security_monitor_state.clone()))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                service_status_middleware,
+            ))
+            .layer(cors_layer())
+            .layer(axum::extract::DefaultBodyLimit::max(max_body_size))
+            .with_state(state.clone());
+
+        // Static file hosting (for Headless/Docker mode)
+        let dist_path = std::env::var("ABV_DIST_PATH").unwrap_or_else(|_| "dist".to_string());
+        let app = if std::path::Path::new(&dist_path).exists() {
+            tracing::info!("Hosting static assets from: {}", dist_path);
+            app.fallback_service(
+                tower_http::services::ServeDir::new(&dist_path).fallback(
+                    tower_http::services::ServeFile::new(format!("{}/index.html", dist_path)),
+                ),
+            )
+        } else {
+            app
+        };
+
+        // Bind address
+        let addr = format!("{}:{}", host, port);
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .map_err(|e| format!("Failed to bind address {}: {}", addr, e))?;
+
+        tracing::info!("Proxy server started on http://{}", addr);
+
+        // Create shutdown channel
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
+
+        let server_instance = Self {
+            shutdown_tx: Arc::new(tokio::sync::Mutex::new(Some(shutdown_tx))),
+            custom_mapping: custom_mapping_state.clone(),
+            proxy_state,
+            security_state,
+            security_monitor_state: security_monitor_state.clone(),
+            zai_state,
+            experimental: experimental_state.clone(),
+            debug_logging: debug_logging_state.clone(),
+            cloudflared_state,
+            is_running: is_running_state,
+            upstream: upstream_client,
+        };
+
+        // Start server in a new task
+        let handle = tokio::spawn(async move {
+            use hyper::server::conn::http1;
+            use hyper_util::rt::TokioIo;
+            use hyper_util::service::TowerToHyperService;
+
+            loop {
+                tokio::select! {
+                    res = listener.accept() => {
+                        match res {
+                            Ok((stream, _)) => {
+                                let io = TokioIo::new(stream);
+                                let service = TowerToHyperService::new(app.clone());
+
+                                tokio::task::spawn(async move {
+                                    if let Err(err) = http1::Builder::new()
+                                        .serve_connection(io, service)
+                                        .with_upgrades()
+                                        .await
+                                    {
+                                        debug!("Connection handler finished or errored: {:?}", err);
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                error!("Failed to accept connection: {:?}", e);
+                            }
+                        }
+                    }
+                    _ = &mut shutdown_rx => {
+                        tracing::info!("Proxy server stopped listening");
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok((server_instance, handle))
+    }
+
+    /// Stop the server
+    pub fn stop(&self) {
+        let tx_mutex = self.shutdown_tx.clone();
+        tokio::spawn(async move {
+            let mut lock = tx_mutex.lock().await;
+            if let Some(tx) = lock.take() {
+                let _ = tx.send(());
+                tracing::info!("Axum server stop signal sent");
+            }
+        });
+    }
+}
