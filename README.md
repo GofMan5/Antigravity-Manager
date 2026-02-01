@@ -15,8 +15,7 @@
   [Features](#-features) •
   [Installation](#-installation) •
   [Quick Start](#-quick-start) •
-  [Configuration](#-configuration) •
-  [Changelog](#-changelog)
+  [Configuration](#-configuration)
 
 </div>
 
@@ -167,41 +166,6 @@ print(response.choices[0].message.content)
 | `API_KEY` | Required. Used for API authentication |
 | `WEB_PASSWORD` | Optional. Separate password for web UI |
 | `ABV_MAX_BODY_SIZE` | Max request body size (default: 100MB) |
-
----
-
-## 📋 Changelog
-
-### v5.0.2 (2026-01-31)
-
-#### 🛡️ VALIDATION_REQUIRED (403) Handling
-- Temporary account blocking when receiving 403 VALIDATION_REQUIRED
-- Configurable block duration (default: 10 minutes)
-- Auto-unblock when time expires
-- Yellow animated badge with countdown timer
-- Toast notification on block
-
-#### 🔧 Debug Console
-- Built-in real-time log viewer
-- Filter by level, search, copy, export
-- Toggle in Settings → Advanced
-
-#### 🎨 UI Improvements
-- Redesigned AddAccountDialog (glassmorphism style)
-- Redesigned UpdateNotification
-- Fixed formatTimeRemaining for invalid dates
-- Dynamic version display in About
-
-#### 🗑️ Removed
-- Fixed Account Mode (use Selected mode instead)
-- Docker build jobs from CI/CD
-
----
-
-### v5.0.1 (2026-01-30)
-- API stability fixes
-- Dynamic User-Agent versioning
-- Flash budget cap improvements
 
 ---
 
