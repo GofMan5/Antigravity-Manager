@@ -2,7 +2,7 @@
 // Modal dialogs for API Proxy page
 
 import { useTranslation } from 'react-i18next';
-import ModalDialog from '@/components/common/ModalDialog';
+import { ModalDialog } from '@/shared/ui';
 
 interface ProxyDialogsProps {
     isResetConfirmOpen: boolean;

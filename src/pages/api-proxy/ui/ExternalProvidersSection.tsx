@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { isTauri, cn } from '@/shared/lib';
 import { CollapsibleCard } from './CollapsibleCard';
-import HelpTooltip from '@/components/common/HelpTooltip';
+import { HelpTooltip } from '@/shared/ui';
 import DebouncedSlider from '@/components/common/DebouncedSlider';
 import CircuitBreaker from '@/components/settings/CircuitBreaker';
 import SchedulingSettings from '@/components/settings/SchedulingSettings';

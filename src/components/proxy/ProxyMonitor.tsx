@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import ModalDialog from '../common/ModalDialog';
+import { ModalDialog } from '@/shared/ui';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@/shared/api';
 import { Trash2, Search, X, Copy, CheckCircle, ChevronLeft, ChevronRight, RefreshCw, User } from 'lucide-react';

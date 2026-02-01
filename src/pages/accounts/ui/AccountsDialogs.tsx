@@ -2,7 +2,7 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import ModalDialog from '@/components/common/ModalDialog';
+import { ModalDialog } from '@/shared/ui';
 import AccountDetailsDialog from '@/components/accounts/AccountDetailsDialog';
 import DeviceFingerprintDialog from '@/components/accounts/DeviceFingerprintDialog';
 import type { Account } from '@/entities/account';

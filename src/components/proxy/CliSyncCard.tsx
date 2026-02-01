@@ -16,8 +16,7 @@ import {
 } from 'lucide-react';
 import { copyToClipboard } from '../../utils/clipboard';
 import { invoke } from '@/shared/api';
-import { showToast } from '@/shared/ui';
-import ModalDialog from '../common/ModalDialog';
+import { showToast, ModalDialog } from '@/shared/ui';
 import { cn } from '@/shared/lib';
 
 interface CliSyncCardProps {

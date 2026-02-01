@@ -1,3 +1,6 @@
+// File: src/shared/ui/modal-dialog/ModalDialog.tsx
+// Modal dialog component
+
 import { AlertTriangle, CheckCircle, XCircle, Info } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
@@ -16,7 +19,7 @@ interface ModalDialogProps {
     isDestructive?: boolean;
 }
 
-export default function ModalDialog({
+export function ModalDialog({
     isOpen,
     title,
     message,
@@ -59,23 +62,22 @@ export default function ModalDialog({
     const showCancel = type === 'confirm' && onCancel;
 
     return createPortal(
-        <div className="modal modal-open z-[100]">
-            {/* Draggable Top Region */}
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
             <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[110]" />
-
-            <div className="modal-box relative max-w-sm bg-white dark:bg-base-100 shadow-2xl rounded-2xl p-0 overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-200">
+            
+            <div className="relative max-w-sm w-full mx-4 bg-white dark:bg-zinc-900 shadow-2xl rounded-2xl p-0 overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex flex-col items-center text-center p-6 pt-8">
                     <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 shadow-sm ${getIconBg()}`}>
                         {getIcon()}
                     </div>
 
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-base-content mb-2">{title}</h3>
-                    <p className="text-gray-500 dark:text-gray-400 text-sm mb-8 leading-relaxed px-4">{message}</p>
+                    <h3 className="text-xl font-bold text-zinc-900 dark:text-white mb-2">{title}</h3>
+                    <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-8 leading-relaxed px-4">{message}</p>
 
                     <div className="flex gap-3 w-full">
                         {showCancel && (
                             <button
-                                className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-base-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-base-300"
+                                className="flex-1 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-medium rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-200 dark:focus:ring-zinc-700"
                                 onClick={onCancel}
                             >
                                 {finalCancelText}
@@ -83,8 +85,8 @@ export default function ModalDialog({
                         )}
                         <button
                             className={`flex-1 px-4 py-2.5 text-white font-medium rounded-xl shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 ${isDestructive && type === 'confirm'
-                                ? 'bg-red-500 hover:bg-red-600 focus:ring-red-500 shadow-red-100'
-                                : 'bg-blue-500 hover:bg-blue-600 focus:ring-blue-500 shadow-blue-100'
+                                ? 'bg-red-500 hover:bg-red-600 focus:ring-red-500'
+                                : 'bg-indigo-500 hover:bg-indigo-600 focus:ring-indigo-500'
                                 }`}
                             onClick={onConfirm}
                         >
@@ -93,8 +95,10 @@ export default function ModalDialog({
                     </div>
                 </div>
             </div>
-            <div className="modal-backdrop bg-black/40 backdrop-blur-sm fixed inset-0 z-[-1]" onClick={showCancel ? onCancel : undefined}></div>
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[-1]" onClick={showCancel ? onCancel : undefined} />
         </div>,
         document.body
     );
 }
+
+export default ModalDialog;

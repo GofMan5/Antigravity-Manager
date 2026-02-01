@@ -11,7 +11,7 @@ import {
     X,
     Edit2
 } from 'lucide-react';
-import HelpTooltip from '@/components/common/HelpTooltip';
+import { HelpTooltip } from '@/shared/ui';
 import type { AppConfig, ProxyConfig } from '@/entities/config';
 import type { ProxyStatus } from '../lib/constants';
 

@@ -3,7 +3,7 @@ import { memo } from 'react';
 
 import AccountTable from '@/components/accounts/AccountTable';
 import AccountGrid from '@/components/accounts/AccountGrid';
-import Pagination from '@/components/common/Pagination';
+import { Pagination } from '@/shared/ui';
 
 import { useAccountsPage } from '../model';
 import { AccountsHeader } from './AccountsHeader';
