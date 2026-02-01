@@ -18,8 +18,9 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '@/entities/config';
 import { isLinux, cn } from '@/shared/lib';
-import { memo, useCallback, useState, useEffect, useRef } from 'react';
+import { memo, useCallback, useState, useEffect, useRef, useMemo } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
+import { useDebugConsole } from '@/widgets/debug-console';
 
 
 const Navbar = function Navbar() {
@@ -27,6 +28,7 @@ const Navbar = function Navbar() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { config, saveConfig } = useConfigStore();
+  const { isEnabled: isConsoleEnabled } = useDebugConsole();
   const [appVersion, setAppVersion] = useState<string>('');
   const [showMore, setShowMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -55,12 +57,20 @@ const Navbar = function Navbar() {
     { path: '/monitor', label: t('nav.call_records'), icon: Activity },
   ];
 
-  // Secondary nav items (in dropdown)
-  const secondaryItems = [
-    { path: '/console', label: t('nav.console', 'Console'), icon: Terminal },
-    { path: '/security', label: t('nav.security', 'Security'), icon: Shield },
-    { path: '/settings', label: t('nav.settings'), icon: Settings },
-  ];
+  // Secondary nav items (in dropdown) - Console only if enabled
+  const secondaryItems = useMemo(() => {
+    const items = [
+      { path: '/security', label: t('nav.security', 'Security'), icon: Shield },
+      { path: '/settings', label: t('nav.settings'), icon: Settings },
+    ];
+    
+    // Add Console only if debug console is enabled
+    if (isConsoleEnabled) {
+      items.unshift({ path: '/console', label: t('nav.console', 'Console'), icon: Terminal });
+    }
+    
+    return items;
+  }, [isConsoleEnabled, t]);
 
   const toggleTheme = useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
     if (!config) return;

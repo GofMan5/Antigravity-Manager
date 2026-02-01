@@ -1,6 +1,7 @@
 // File: src/app/router/routes.tsx
 // Application routes configuration
 
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 
 // Layout (FSD)
@@ -14,7 +15,16 @@ import { ApiProxyPage } from '@/pages/api-proxy';
 import { SecurityPage } from '@/pages/security';
 import { TokenStatsPage } from '@/pages/token-stats';
 import { MonitorPage } from '@/pages/monitor';
-import { ConsolePage } from '@/pages/console';
+
+// Lazy loaded pages (heavy components)
+const ConsolePage = lazy(() => import('@/pages/console/ui/ConsolePage'));
+
+// Loading fallback for lazy pages
+const PageLoader = () => (
+  <div className="flex items-center justify-center h-full">
+    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 export const router = createBrowserRouter([
   {
@@ -43,7 +53,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'console',
-        element: <ConsolePage />,
+        element: <Suspense fallback={<PageLoader />}><ConsolePage /></Suspense>,
       },
       {
         path: 'security',

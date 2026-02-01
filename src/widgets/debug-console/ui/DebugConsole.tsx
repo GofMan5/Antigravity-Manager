@@ -1,9 +1,10 @@
 // File: src/widgets/debug-console/ui/DebugConsole.tsx
-// Debug console component - supports both panel and embedded modes
+// Debug console component - optimized with virtualization (react-window v2)
 
-import React, { useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useRef, useMemo, useCallback, useState, memo, CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
+import { List, useListRef } from 'react-window';
 import { 
     X, 
     Copy, 
@@ -26,6 +27,7 @@ import { cn, copyToClipboard } from '@/shared/lib';
 import { useDebugConsole, LogEntry, LogLevel } from '../model/store';
 import { showToast } from '@/shared/ui';
 
+// Level configuration - static, no re-renders
 const LEVEL_CONFIG: Record<LogLevel, { icon: React.ReactNode; color: string; bg: string }> = {
     ERROR: { 
         icon: <AlertCircle size={12} />, 
@@ -54,9 +56,27 @@ const LEVEL_CONFIG: Record<LogLevel, { icon: React.ReactNode; color: string; bg:
     },
 };
 
-const LogRow: React.FC<{ log: LogEntry }> = React.memo(({ log }) => {
-    const [expanded, setExpanded] = React.useState(false);
+// ROW_HEIGHT for virtualization
+const ROW_HEIGHT = 32;
+
+// Row component props type
+interface LogRowProps {
+    logs: LogEntry[];
+}
+
+// Memoized log row component for react-window v2
+const LogRowComponent = ({ index, style, logs }: {
+    ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
+    index: number;
+    style: CSSProperties;
+    logs: LogEntry[];
+}) => {
+    const log = logs[index];
+    if (!log) return null;
+    
     const config = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.INFO;
+    
+    // Pre-compute time string
     const date = new Date(log.timestamp);
     const time = date.toLocaleTimeString('en-US', { 
         hour12: false, 
@@ -65,47 +85,74 @@ const LogRow: React.FC<{ log: LogEntry }> = React.memo(({ log }) => {
         second: '2-digit'
     }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
 
-    const hasFields = Object.keys(log.fields).length > 0;
+    // Shortened target
+    const shortTarget = log.target.split('::').slice(-2).join('::');
 
     return (
-        <div className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
-            <div 
-                className={cn(
-                    "flex items-start gap-2 px-3 py-1.5 text-[11px] font-mono",
-                    hasFields && "cursor-pointer"
-                )}
-                onClick={() => hasFields && setExpanded(!expanded)}
+        <div 
+            style={style}
+            className="flex items-center gap-2 px-3 text-[11px] font-mono border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors"
+        >
+            <span className="text-zinc-400 dark:text-zinc-500 shrink-0 w-20 select-none">{time}</span>
+            <span className={cn("shrink-0 w-14 flex items-center gap-1 font-bold", config.color)}>
+                {config.icon}
+                <span className="text-[10px]">{log.level}</span>
+            </span>
+            <span 
+                className="text-zinc-500 dark:text-zinc-500 shrink-0 max-w-32 truncate font-medium" 
+                title={log.target}
             >
-                <span className="text-zinc-400 dark:text-zinc-500 shrink-0 w-20 select-none">{time}</span>
-                <span className={cn("shrink-0 w-14 flex items-center gap-1 font-bold", config.color)}>
-                    {config.icon}
-                    <span className="text-[10px]">{log.level}</span>
-                </span>
-                <span className="text-zinc-500 dark:text-zinc-500 shrink-0 max-w-32 truncate font-medium" title={log.target}>
-                    {log.target.split('::').slice(-2).join('::')}
-                </span>
-                <span className="text-zinc-700 dark:text-zinc-300 flex-1 break-words whitespace-pre-wrap">
-                    {log.message}
-                </span>
-            </div>
+                {shortTarget}
+            </span>
+            <span className="text-zinc-700 dark:text-zinc-300 flex-1 truncate">
+                {log.message}
+            </span>
+        </div>
+    );
+};
 
-            {expanded && hasFields && (
-                <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800/50 text-[11px]">
-                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-                        {Object.entries(log.fields).map(([key, value]) => (
-                            <React.Fragment key={key}>
-                                <span className="text-zinc-400 dark:text-zinc-500 text-right">{key}:</span>
-                                <span className="text-zinc-700 dark:text-zinc-300 break-all select-text font-medium">{value}</span>
-                            </React.Fragment>
-                        ))}
-                    </div>
-                </div>
-            )}
+// Debounce hook
+function useDebouncedValue<T>(value: T, delay: number): T {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedValue(value), delay);
+        return () => clearTimeout(timer);
+    }, [value, delay]);
+
+    return debouncedValue;
+}
+
+// Memoized footer stats
+const FooterStats = memo<{ logs: LogEntry[] }>(({ logs }) => {
+    const counts = useMemo(() => {
+        const result: Partial<Record<LogLevel, number>> = {};
+        for (const log of logs) {
+            result[log.level] = (result[log.level] || 0) + 1;
+        }
+        return result;
+    }, [logs]);
+
+    return (
+        <div className="flex items-center gap-4">
+            {(Object.keys(LEVEL_CONFIG) as LogLevel[]).map(level => {
+                const count = counts[level];
+                if (!count) return null;
+                return (
+                    <span 
+                        key={level}
+                        className="font-medium flex items-center gap-1.5 opacity-90"
+                    >
+                        {LEVEL_CONFIG[level].icon}
+                        {count}
+                    </span>
+                );
+            })}
         </div>
     );
 });
 
-LogRow.displayName = 'LogRow';
+FooterStats.displayName = 'FooterStats';
 
 interface DebugConsoleProps {
     embedded?: boolean;
@@ -126,35 +173,47 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) 
         clearLogs,
     } = useDebugConsole();
 
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const [filterOpen, setFilterOpen] = React.useState(false);
+    const listRef = useListRef(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [filterOpen, setFilterOpen] = useState(false);
+    const [inputValue, setInputValue] = useState(searchTerm);
+    const prevLogsLengthRef = useRef(0);
 
+    // Debounce search term (300ms)
+    const debouncedSearch = useDebouncedValue(inputValue, 300);
+
+    // Sync debounced search to store
+    useEffect(() => {
+        setSearchTerm(debouncedSearch);
+    }, [debouncedSearch, setSearchTerm]);
+
+    // Filter logs - memoized with debounced search
     const filteredLogs = useMemo(() => {
+        const term = debouncedSearch.toLowerCase();
         return logs.filter(log => {
             if (!filter.includes(log.level)) return false;
-            if (searchTerm) {
-                const term = searchTerm.toLowerCase();
+            if (term) {
                 return (
                     log.message.toLowerCase().includes(term) ||
-                    log.target.toLowerCase().includes(term) ||
-                    Object.values(log.fields).some(v => v.toLowerCase().includes(term))
+                    log.target.toLowerCase().includes(term)
                 );
             }
             return true;
         });
-    }, [logs, filter, searchTerm]);
+    }, [logs, filter, debouncedSearch]);
 
+    // Auto-scroll to bottom when new logs arrive
     useEffect(() => {
-        if (autoScroll && scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        if (autoScroll && listRef.current && filteredLogs.length > 0 && filteredLogs.length !== prevLogsLengthRef.current) {
+            listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' });
         }
-    }, [filteredLogs, autoScroll]);
+        prevLogsLengthRef.current = filteredLogs.length;
+    }, [filteredLogs.length, autoScroll, listRef]);
 
     const handleCopyAll = useCallback(async () => {
         const text = filteredLogs.map(log => {
             const time = new Date(log.timestamp).toISOString();
-            const fields = Object.entries(log.fields).map(([k, v]) => `${k}=${v}`).join(' ');
-            return `[${time}] [${log.level}] [${log.target}] ${log.message} ${fields}`.trim();
+            return `[${time}] [${log.level}] [${log.target}] ${log.message}`;
         }).join('\n');
         
         const success = await copyToClipboard(text);
@@ -164,10 +223,7 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) 
     }, [filteredLogs, t]);
 
     const handleExport = useCallback(() => {
-        const text = filteredLogs.map(log => {
-            const time = new Date(log.timestamp).toISOString();
-            return JSON.stringify({ ...log, time });
-        }).join('\n');
+        const text = filteredLogs.map(log => JSON.stringify(log)).join('\n');
         
         const blob = new Blob([text], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -188,20 +244,12 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) 
         }
     }, [filter, setFilter]);
 
-    const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-        const el = e.currentTarget;
-        const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-        if (isAtBottom !== autoScroll) {
-            setAutoScroll(isAtBottom);
-        }
-    }, [autoScroll, setAutoScroll]);
-
     const scrollToBottom = useCallback(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        if (listRef.current && filteredLogs.length > 0) {
+            listRef.current.scrollToRow({ index: filteredLogs.length - 1, align: 'end' });
             setAutoScroll(true);
         }
-    }, [setAutoScroll]);
+    }, [filteredLogs.length, setAutoScroll, listRef]);
 
     // Content component (shared between embedded and panel modes)
     const content = (
@@ -215,7 +263,7 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) 
         )}>
             {/* Header */}
             <div className={cn(
-                "flex items-center justify-between px-4 py-3 border-b",
+                "flex items-center justify-between px-4 py-3 border-b shrink-0",
                 "bg-zinc-50 dark:bg-zinc-900/80",
                 "border-zinc-200 dark:border-zinc-800",
                 embedded && "rounded-t-xl"
@@ -239,8 +287,8 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) 
                         <input
                             type="text"
                             placeholder={t('debug_console.search', { defaultValue: 'Search...' })}
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
                             className={cn(
                                 "w-40 bg-zinc-100 dark:bg-zinc-800 border border-transparent rounded-lg pl-8 pr-3 py-1.5 text-xs transition-all",
                                 "text-zinc-700 dark:text-zinc-300 placeholder:text-zinc-400",
@@ -335,15 +383,14 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) 
                 </div>
             </div>
             
-            {/* Log content */}
+            {/* Log content - Virtualized */}
             <div 
-                ref={scrollRef}
-                onScroll={handleScroll}
+                ref={containerRef}
                 className={cn(
-                    "flex-1 overflow-y-auto overflow-x-hidden",
-                    "bg-white dark:bg-zinc-950",
-                    "scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent"
+                    "flex-1 overflow-hidden",
+                    "bg-white dark:bg-zinc-950"
                 )}
+                style={{ minHeight: 0 }}
             >
                 {filteredLogs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-zinc-400 dark:text-zinc-600">
@@ -352,33 +399,26 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) 
                         <p className="text-xs mt-1 opacity-70">{t('debug_console.no_logs_hint', { defaultValue: 'Logs will appear here in real-time' })}</p>
                     </div>
                 ) : (
-                    <div className="py-1">
-                        {filteredLogs.map(log => <LogRow key={log.id} log={log} />)}
-                    </div>
+                    <List<LogRowProps>
+                        listRef={listRef}
+                        rowCount={filteredLogs.length}
+                        rowHeight={ROW_HEIGHT}
+                        rowComponent={LogRowComponent}
+                        rowProps={{ logs: filteredLogs }}
+                        overscanCount={20}
+                        className="scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent"
+                        style={{ height: '100%', width: '100%' }}
+                    />
                 )}
             </div>
             
             {/* Footer */}
             <div className={cn(
-                "flex items-center justify-between px-4 py-2 border-t text-white text-[10px]",
+                "flex items-center justify-between px-4 py-2 border-t text-white text-[10px] shrink-0",
                 "bg-indigo-600",
                 embedded && "rounded-b-xl"
             )}>
-                <div className="flex items-center gap-4">
-                    {(Object.keys(LEVEL_CONFIG) as LogLevel[]).map(level => {
-                        const count = logs.filter(l => l.level === level).length;
-                        if (count === 0) return null;
-                        return (
-                            <span 
-                                key={level}
-                                className="font-medium flex items-center gap-1.5 opacity-90"
-                            >
-                                {LEVEL_CONFIG[level].icon}
-                                {count}
-                            </span>
-                        );
-                    })}
-                </div>
+                <FooterStats logs={logs} />
                 
                 <div className="flex items-center gap-3">
                     {!autoScroll && (
