@@ -14,6 +14,7 @@ import { ApiProxyPage } from '@/pages/api-proxy';
 import { SecurityPage } from '@/pages/security';
 import { TokenStatsPage } from '@/pages/token-stats';
 import { MonitorPage } from '@/pages/monitor';
+import { ConsolePage } from '@/pages/console';
 
 export const router = createBrowserRouter([
   {
@@ -39,6 +40,10 @@ export const router = createBrowserRouter([
       {
         path: 'token-stats',
         element: <TokenStatsPage />,
+      },
+      {
+        path: 'console',
+        element: <ConsolePage />,
       },
       {
         path: 'security',

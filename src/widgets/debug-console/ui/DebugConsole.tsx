@@ -1,5 +1,5 @@
 // File: src/widgets/debug-console/ui/DebugConsole.tsx
-// Debug console panel component
+// Debug console component - supports both panel and embedded modes
 
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,44 +17,45 @@ import {
     Info,
     Bug,
     Terminal,
-    ArrowDownToLine
+    ArrowDownToLine,
+    Pause,
+    Play
 } from 'lucide-react';
 
 import { cn, copyToClipboard } from '@/shared/lib';
 import { useDebugConsole, LogEntry, LogLevel } from '../model/store';
-
-// Import toast from shared (will be migrated)
 import { showToast } from '@/shared/ui';
 
 const LEVEL_CONFIG: Record<LogLevel, { icon: React.ReactNode; color: string; bg: string }> = {
     ERROR: { 
         icon: <AlertCircle size={12} />, 
-        color: 'text-red-400', 
-        bg: 'bg-red-500/10 border-red-500/20' 
+        color: 'text-rose-500', 
+        bg: 'bg-rose-500/10' 
     },
     WARN: { 
         icon: <AlertTriangle size={12} />, 
-        color: 'text-amber-400', 
-        bg: 'bg-amber-500/10 border-amber-500/20' 
+        color: 'text-amber-500', 
+        bg: 'bg-amber-500/10' 
     },
     INFO: { 
         icon: <Info size={12} />, 
-        color: 'text-blue-400', 
-        bg: 'bg-blue-500/10 border-blue-500/20' 
+        color: 'text-blue-500', 
+        bg: 'bg-blue-500/10' 
     },
     DEBUG: { 
         icon: <Bug size={12} />, 
-        color: 'text-purple-400', 
-        bg: 'bg-purple-500/10 border-purple-500/20' 
+        color: 'text-purple-500', 
+        bg: 'bg-purple-500/10' 
     },
     TRACE: { 
         icon: <Terminal size={12} />, 
-        color: 'text-gray-400', 
-        bg: 'bg-gray-500/10 border-gray-500/20' 
+        color: 'text-zinc-500', 
+        bg: 'bg-zinc-500/10' 
     },
 };
 
 const LogRow: React.FC<{ log: LogEntry }> = React.memo(({ log }) => {
+    const [expanded, setExpanded] = React.useState(false);
     const config = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.INFO;
     const date = new Date(log.timestamp);
     const time = date.toLocaleTimeString('en-US', { 
@@ -64,34 +65,53 @@ const LogRow: React.FC<{ log: LogEntry }> = React.memo(({ log }) => {
         second: '2-digit'
     }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
 
+    const hasFields = Object.keys(log.fields).length > 0;
+
     return (
-        <div className={cn(
-            "flex items-start gap-2 px-3 py-1.5 border-b border-white/5 hover:bg-white/5 transition-colors text-[11px] font-mono",
-            config.bg
-        )}>
-            <span className="text-zinc-500 shrink-0 w-20">{time}</span>
-            <span className={cn("shrink-0 w-12 flex items-center gap-1", config.color)}>
-                {config.icon}
-                <span className="font-bold text-[10px]">{log.level}</span>
-            </span>
-            <span className="text-zinc-600 shrink-0 max-w-32 truncate" title={log.target}>
-                [{log.target.split('::').pop()}]
-            </span>
-            <span className="text-zinc-200 flex-1 break-all whitespace-pre-wrap">
-                {log.message}
-                {Object.keys(log.fields).length > 0 && (
-                    <span className="text-zinc-500 ml-2">
-                        {Object.entries(log.fields).map(([k, v]) => `${k}=${v}`).join(' ')}
-                    </span>
+        <div className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+            <div 
+                className={cn(
+                    "flex items-start gap-2 px-3 py-1.5 text-[11px] font-mono",
+                    hasFields && "cursor-pointer"
                 )}
-            </span>
+                onClick={() => hasFields && setExpanded(!expanded)}
+            >
+                <span className="text-zinc-400 dark:text-zinc-500 shrink-0 w-20 select-none">{time}</span>
+                <span className={cn("shrink-0 w-14 flex items-center gap-1 font-bold", config.color)}>
+                    {config.icon}
+                    <span className="text-[10px]">{log.level}</span>
+                </span>
+                <span className="text-zinc-500 dark:text-zinc-500 shrink-0 max-w-32 truncate font-medium" title={log.target}>
+                    {log.target.split('::').slice(-2).join('::')}
+                </span>
+                <span className="text-zinc-700 dark:text-zinc-300 flex-1 break-words whitespace-pre-wrap">
+                    {log.message}
+                </span>
+            </div>
+
+            {expanded && hasFields && (
+                <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800/50 text-[11px]">
+                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                        {Object.entries(log.fields).map(([key, value]) => (
+                            <React.Fragment key={key}>
+                                <span className="text-zinc-400 dark:text-zinc-500 text-right">{key}:</span>
+                                <span className="text-zinc-700 dark:text-zinc-300 break-all select-text font-medium">{value}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 });
 
 LogRow.displayName = 'LogRow';
 
-export const DebugConsole: React.FC = () => {
+interface DebugConsoleProps {
+    embedded?: boolean;
+}
+
+export const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) => {
     const { t } = useTranslation();
     const {
         isOpen,
@@ -183,6 +203,208 @@ export const DebugConsole: React.FC = () => {
         }
     }, [setAutoScroll]);
 
+    // Content component (shared between embedded and panel modes)
+    const content = (
+        <div className={cn(
+            "flex flex-col font-sans transition-colors duration-200",
+            "bg-white dark:bg-zinc-900",
+            "text-zinc-700 dark:text-zinc-300",
+            embedded
+                ? "h-full w-full rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden"
+                : "fixed right-0 top-0 bottom-0 w-full max-w-3xl border-l border-zinc-200 dark:border-zinc-800 z-50 shadow-2xl"
+        )}>
+            {/* Header */}
+            <div className={cn(
+                "flex items-center justify-between px-4 py-3 border-b",
+                "bg-zinc-50 dark:bg-zinc-900/80",
+                "border-zinc-200 dark:border-zinc-800",
+                embedded && "rounded-t-xl"
+            )}>
+                <div className="flex items-center gap-3">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10">
+                        <Terminal size={16} className="text-emerald-500" />
+                    </div>
+                    <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
+                        {t('debug_console.title', { defaultValue: 'Console' })}
+                    </h2>
+                    <span className="text-[10px] font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded">
+                        {filteredLogs.length} / {logs.length}
+                    </span>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                    {/* Search */}
+                    <div className="relative">
+                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                        <input
+                            type="text"
+                            placeholder={t('debug_console.search', { defaultValue: 'Search...' })}
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className={cn(
+                                "w-40 bg-zinc-100 dark:bg-zinc-800 border border-transparent rounded-lg pl-8 pr-3 py-1.5 text-xs transition-all",
+                                "text-zinc-700 dark:text-zinc-300 placeholder:text-zinc-400",
+                                "focus:outline-none focus:w-56 focus:border-zinc-300 dark:focus:border-zinc-600"
+                            )}
+                        />
+                    </div>
+                    
+                    {/* Filter dropdown */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setFilterOpen(!filterOpen)}
+                            className={cn(
+                                "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                                filterOpen 
+                                    ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400" 
+                                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                            )}
+                        >
+                            <Filter size={14} />
+                            <ChevronDown size={12} className={cn("transition-transform", filterOpen && "rotate-180")} />
+                        </button>
+                        
+                        {filterOpen && (
+                            <div className="absolute right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl p-2 z-10 min-w-36">
+                                {(Object.keys(LEVEL_CONFIG) as LogLevel[]).map(level => (
+                                    <label
+                                        key={level}
+                                        className="flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 rounded-md cursor-pointer"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={filter.includes(level)}
+                                            onChange={() => toggleLevel(level)}
+                                            className="w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600"
+                                        />
+                                        <span className={cn("text-xs font-medium", LEVEL_CONFIG[level].color)}>
+                                            {level}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Auto-scroll toggle */}
+                    <button
+                        onClick={() => setAutoScroll(!autoScroll)}
+                        className={cn(
+                            "p-1.5 rounded-lg transition-colors",
+                            autoScroll
+                                ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                        )}
+                        title={autoScroll ? t('debug_console.pause_scroll', { defaultValue: 'Pause scroll' }) : t('debug_console.resume_scroll', { defaultValue: 'Resume scroll' })}
+                    >
+                        {autoScroll ? <Pause size={14} /> : <Play size={14} />}
+                    </button>
+                    
+                    <button
+                        onClick={handleCopyAll}
+                        className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                        title={t('debug_console.copy_all', { defaultValue: 'Copy All' })}
+                    >
+                        <Copy size={14} />
+                    </button>
+                    
+                    <button
+                        onClick={handleExport}
+                        className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                        title={t('debug_console.export', { defaultValue: 'Export' })}
+                    >
+                        <Download size={14} />
+                    </button>
+                    
+                    <button
+                        onClick={clearLogs}
+                        className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-rose-500 transition-colors"
+                        title={t('debug_console.clear', { defaultValue: 'Clear' })}
+                    >
+                        <Trash2 size={14} />
+                    </button>
+
+                    {!embedded && (
+                        <button
+                            onClick={close}
+                            className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-white transition-colors"
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
+                </div>
+            </div>
+            
+            {/* Log content */}
+            <div 
+                ref={scrollRef}
+                onScroll={handleScroll}
+                className={cn(
+                    "flex-1 overflow-y-auto overflow-x-hidden",
+                    "bg-white dark:bg-zinc-950",
+                    "scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent"
+                )}
+            >
+                {filteredLogs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-zinc-400 dark:text-zinc-600">
+                        <Terminal size={48} className="mb-4 opacity-30" />
+                        <p className="text-sm font-medium">{t('debug_console.no_logs', { defaultValue: 'No logs to display' })}</p>
+                        <p className="text-xs mt-1 opacity-70">{t('debug_console.no_logs_hint', { defaultValue: 'Logs will appear here in real-time' })}</p>
+                    </div>
+                ) : (
+                    <div className="py-1">
+                        {filteredLogs.map(log => <LogRow key={log.id} log={log} />)}
+                    </div>
+                )}
+            </div>
+            
+            {/* Footer */}
+            <div className={cn(
+                "flex items-center justify-between px-4 py-2 border-t text-white text-[10px]",
+                "bg-indigo-600",
+                embedded && "rounded-b-xl"
+            )}>
+                <div className="flex items-center gap-4">
+                    {(Object.keys(LEVEL_CONFIG) as LogLevel[]).map(level => {
+                        const count = logs.filter(l => l.level === level).length;
+                        if (count === 0) return null;
+                        return (
+                            <span 
+                                key={level}
+                                className="font-medium flex items-center gap-1.5 opacity-90"
+                            >
+                                {LEVEL_CONFIG[level].icon}
+                                {count}
+                            </span>
+                        );
+                    })}
+                </div>
+                
+                <div className="flex items-center gap-3">
+                    {!autoScroll && (
+                        <button
+                            onClick={scrollToBottom}
+                            className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/20 hover:bg-black/30 font-medium transition-colors"
+                        >
+                            <ArrowDownToLine size={10} />
+                            {t('debug_console.scroll_to_bottom', { defaultValue: 'Scroll' })}
+                        </button>
+                    )}
+                    <span className="opacity-80 flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></div>
+                        Live
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+
+    // If embedded, just return the content directly
+    if (embedded) {
+        return content;
+    }
+
+    // Panel mode with animations
     return (
         <AnimatePresence>
             {isOpen && (
@@ -200,144 +422,8 @@ export const DebugConsole: React.FC = () => {
                         animate={{ x: 0 }}
                         exit={{ x: '100%' }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                        className="fixed right-0 top-0 bottom-0 w-full max-w-3xl bg-zinc-900 border-l border-white/10 z-50 flex flex-col shadow-2xl"
                     >
-                        {/* Header */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-zinc-800/50">
-                            <div className="flex items-center gap-3">
-                                <Terminal size={18} className="text-green-400" />
-                                <h2 className="text-sm font-bold text-white">
-                                    {t('debug_console.title', { defaultValue: 'Debug Console' })}
-                                </h2>
-                                <span className="text-[10px] font-mono text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded">
-                                    {filteredLogs.length} / {logs.length}
-                                </span>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                                <div className="relative">
-                                    <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-500" />
-                                    <input
-                                        type="text"
-                                        placeholder={t('debug_console.search', { defaultValue: 'Search...' })}
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-40 bg-zinc-800 border border-white/10 rounded pl-7 pr-2 py-1 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/50"
-                                    />
-                                </div>
-                                
-                                <div className="relative">
-                                    <button
-                                        onClick={() => setFilterOpen(!filterOpen)}
-                                        className={cn(
-                                            "flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors",
-                                            filterOpen ? "bg-blue-500/20 text-blue-400" : "bg-zinc-800 text-zinc-400 hover:text-white"
-                                        )}
-                                    >
-                                        <Filter size={14} />
-                                        <ChevronDown size={12} className={cn("transition-transform", filterOpen && "rotate-180")} />
-                                    </button>
-                                    
-                                    {filterOpen && (
-                                        <div className="absolute right-0 top-full mt-1 bg-zinc-800 border border-white/10 rounded-lg shadow-xl p-2 z-10 min-w-32">
-                                            {(Object.keys(LEVEL_CONFIG) as LogLevel[]).map(level => (
-                                                <label
-                                                    key={level}
-                                                    className="flex items-center gap-2 px-2 py-1 hover:bg-white/5 rounded cursor-pointer"
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={filter.includes(level)}
-                                                        onChange={() => toggleLevel(level)}
-                                                        className="w-3 h-3 rounded border-zinc-600"
-                                                    />
-                                                    <span className={cn("text-xs font-medium", LEVEL_CONFIG[level].color)}>
-                                                        {level}
-                                                    </span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                                
-                                <button
-                                    onClick={handleCopyAll}
-                                    className="p-1.5 rounded bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
-                                    title={t('debug_console.copy_all', { defaultValue: 'Copy All' })}
-                                >
-                                    <Copy size={14} />
-                                </button>
-                                
-                                <button
-                                    onClick={handleExport}
-                                    className="p-1.5 rounded bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
-                                    title={t('debug_console.export', { defaultValue: 'Export' })}
-                                >
-                                    <Download size={14} />
-                                </button>
-                                
-                                <button
-                                    onClick={clearLogs}
-                                    className="p-1.5 rounded bg-zinc-800 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 transition-colors"
-                                    title={t('debug_console.clear', { defaultValue: 'Clear' })}
-                                >
-                                    <Trash2 size={14} />
-                                </button>
-                                
-                                <button
-                                    onClick={close}
-                                    className="p-1.5 rounded bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
-                                >
-                                    <X size={14} />
-                                </button>
-                            </div>
-                        </div>
-                        
-                        {/* Log content */}
-                        <div 
-                            ref={scrollRef}
-                            onScroll={handleScroll}
-                            className="flex-1 overflow-y-auto overflow-x-hidden bg-zinc-950"
-                        >
-                            {filteredLogs.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-full text-zinc-600">
-                                    <Terminal size={48} className="mb-4 opacity-50" />
-                                    <p className="text-sm">{t('debug_console.no_logs', { defaultValue: 'No logs to display' })}</p>
-                                    <p className="text-xs mt-1">{t('debug_console.no_logs_hint', { defaultValue: 'Logs will appear here in real-time' })}</p>
-                                </div>
-                            ) : (
-                                filteredLogs.map(log => <LogRow key={log.id} log={log} />)
-                            )}
-                        </div>
-                        
-                        {/* Footer */}
-                        <div className="flex items-center justify-between px-4 py-2 border-t border-white/10 bg-zinc-800/50">
-                            <div className="flex items-center gap-3">
-                                {(Object.keys(LEVEL_CONFIG) as LogLevel[]).map(level => {
-                                    const count = logs.filter(l => l.level === level).length;
-                                    if (count === 0) return null;
-                                    return (
-                                        <span 
-                                            key={level}
-                                            className={cn("text-[10px] font-mono flex items-center gap-1", LEVEL_CONFIG[level].color)}
-                                        >
-                                            {LEVEL_CONFIG[level].icon}
-                                            {count}
-                                        </span>
-                                    );
-                                })}
-                            </div>
-                            
-                            {!autoScroll && (
-                                <button
-                                    onClick={scrollToBottom}
-                                    className="flex items-center gap-1 px-2 py-1 rounded bg-blue-500/20 text-blue-400 text-xs font-medium hover:bg-blue-500/30 transition-colors"
-                                >
-                                    <ArrowDownToLine size={12} />
-                                    {t('debug_console.scroll_to_bottom', { defaultValue: 'Scroll to bottom' })}
-                                </button>
-                            )}
-                        </div>
+                        {content}
                     </motion.div>
                 </>
             )}
