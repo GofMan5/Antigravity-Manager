@@ -47,4 +47,7 @@ pub struct ProxyToken {
     pub model_quotas: HashMap<String, i32>,
     pub verification_needed: bool,
     pub verification_url: Option<String>,
+    pub reset_time: Option<i64>,        // [FIX] Quota reset timestamp for priority sorting
+    pub validation_blocked: bool,       // [FIX] Temporary block for VALIDATION_REQUIRED
+    pub validation_blocked_until: i64,  // [FIX] Timestamp until which account is blocked
 }

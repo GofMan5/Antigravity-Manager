@@ -283,6 +283,18 @@ impl TokenManager {
                 .get("verification_url")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+            // [FIX] New fields for quota reset and validation blocking
+            reset_time: account
+                .get("reset_time")
+                .and_then(|v| v.as_i64()),
+            validation_blocked: account
+                .get("validation_blocked")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            validation_blocked_until: account
+                .get("validation_blocked_until")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
         }))
     }
 }

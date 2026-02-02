@@ -37,6 +37,14 @@ impl TokenManager {
         session_id: Option<&str>,
         target_model: &str,
     ) -> Result<TokenLease, String> {
+        // [FIX] Process pending reload accounts from quota protection
+        let pending_accounts = crate::proxy::server::take_pending_reload_accounts();
+        for account_id in pending_accounts {
+            if let Err(e) = self.reload_account(&account_id).await {
+                tracing::warn!("[Quota] Failed to reload account {}: {}", account_id, e);
+            }
+        }
+
         let mut tokens_snapshot: Vec<ProxyToken> =
             self.tokens.iter().map(|e| e.value().clone()).collect();
         let total = tokens_snapshot.len();
@@ -49,11 +57,115 @@ impl TokenManager {
             crate::proxy::common::model_mapping::normalize_to_standard_id(target_model)
                 .unwrap_or_else(|| target_model.to_string());
 
+        // Check quota protection config
+        let quota_protection_enabled = crate::modules::config::load_app_config()
+            .map(|cfg| cfg.quota_protection.enabled)
+            .unwrap_or(false);
+
+        // ===== [FIX #820] Fixed Account Mode: Prioritize preferred account =====
+        let preferred_id = self.preferred_account_id.read().await.clone();
+        if let Some(ref pref_id) = preferred_id {
+            if let Some(preferred_token) = tokens_snapshot.iter().find(|t| &t.account_id == pref_id)
+            {
+                let is_rate_limited = self
+                    .is_rate_limited(&preferred_token.account_id, Some(&normalized_target))
+                    .await;
+                let is_quota_protected = quota_protection_enabled
+                    && preferred_token
+                        .protected_models
+                        .contains(&normalized_target);
+
+                if !is_rate_limited && !is_quota_protected {
+                    tracing::info!(
+                        "🔒 [FIX #820] Using preferred account: {} (fixed mode)",
+                        preferred_token.email
+                    );
+
+                    let mut token = preferred_token.clone();
+
+                    // Refresh token if needed (5 min before expiry)
+                    let now = chrono::Utc::now().timestamp();
+                    if now >= token.timestamp - 300 {
+                        tracing::debug!("Preferred account {} token expiring, refreshing...", token.email);
+                        match crate::modules::oauth::refresh_access_token(&token.refresh_token).await {
+                            Ok(token_response) => {
+                                token.access_token = token_response.access_token.clone();
+                                token.expires_in = token_response.expires_in;
+                                token.timestamp = now + token_response.expires_in;
+
+                                if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                                    entry.access_token = token.access_token.clone();
+                                    entry.expires_in = token.expires_in;
+                                    entry.timestamp = token.timestamp;
+                                }
+                                let _ = self.save_refreshed_token(&token.account_id, &token_response).await;
+                            }
+                            Err(e) => {
+                                tracing::warn!("Preferred account token refresh failed: {}", e);
+                            }
+                        }
+                    }
+
+                    // Ensure project_id exists
+                    let project_id = if let Some(pid) = &token.project_id {
+                        pid.clone()
+                    } else {
+                        match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await {
+                            Ok(pid) => {
+                                if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                                    entry.project_id = Some(pid.clone());
+                                }
+                                let _ = self.save_project_id(&token.account_id, &pid).await;
+                                pid
+                            }
+                            Err(_) => "bamboo-precept-lgxtn".to_string(), // fallback
+                        }
+                    };
+
+                    // Increment active requests
+                    self.active_requests
+                        .entry(token.account_id.clone())
+                        .or_insert(AtomicUsize::new(0))
+                        .fetch_add(1, Ordering::SeqCst);
+
+                    return Ok(TokenLease {
+                        access_token: token.access_token,
+                        project_id,
+                        email: token.email,
+                        account_id: token.account_id.clone(),
+                        active_requests: self.active_requests.clone(),
+                    });
+                } else {
+                    if is_rate_limited {
+                        tracing::warn!("🔒 [FIX #820] Preferred account {} is rate-limited, falling back to round-robin", preferred_token.email);
+                    } else {
+                        tracing::warn!("🔒 [FIX #820] Preferred account {} is quota-protected for {}, falling back to round-robin", preferred_token.email, target_model);
+                    }
+                }
+            } else {
+                tracing::warn!("🔒 [FIX #820] Preferred account {} not found in pool, falling back to round-robin", pref_id);
+            }
+        }
+        // ===== [END FIX #820] =====
+
         // Check circuit breaker config
         let cb_enabled = self.circuit_breaker_config.read().await.enabled;
 
         // Filter tokens based on quota and circuit breaker
         tokens_snapshot.retain(|t| {
+            // [FIX] Validation blocked check (VALIDATION_REQUIRED temporary block)
+            if t.validation_blocked {
+                let now = chrono::Utc::now().timestamp();
+                if now < t.validation_blocked_until {
+                    tracing::debug!(
+                        "  ⛔ {} - SKIP: Validation blocked until {}",
+                        t.email,
+                        t.validation_blocked_until
+                    );
+                    return false;
+                }
+            }
+
             // Circuit breaker check
             if cb_enabled {
                 if let Some(fail_entry) = self.circuit_breaker.get(&t.account_id) {
