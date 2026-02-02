@@ -2,7 +2,7 @@
 //! Security database module for IP blacklist/whitelist management.
 //! Uses SQLite with WAL mode for concurrent access safety.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;

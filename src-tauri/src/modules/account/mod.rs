@@ -20,7 +20,7 @@ mod switch;
 
 // Re-export public API
 pub use crud::{
-    add_account, delete_account, delete_accounts, export_accounts_by_ids, reorder_accounts, upsert_account,
+    delete_account, delete_accounts, export_accounts_by_ids, reorder_accounts, upsert_account,
 };
 pub use device::{
     apply_device_profile, bind_device_profile, bind_device_profile_with_profile,
@@ -30,7 +30,7 @@ pub use device::{
 pub use quota::{fetch_quota_with_retry, refresh_all_quotas_logic, toggle_proxy_status, update_account_quota, RefreshStats};
 pub use storage::{
     get_accounts_dir, get_current_account, get_current_account_id, get_data_dir, list_accounts,
-    load_account, load_account_async, load_account_index, save_account, save_account_index,
+    load_account, save_account,
     set_current_account_id,
 };
 pub use switch::switch_account;

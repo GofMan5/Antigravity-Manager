@@ -5,7 +5,7 @@
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
-    response::{Html, IntoResponse, Json},
+    response::{Html, Json},
 };
 use tracing::error;
 

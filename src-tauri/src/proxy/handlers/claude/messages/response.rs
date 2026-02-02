@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 /// Build error response for invalid request.
 pub fn build_invalid_request_error(message: String) -> Response {

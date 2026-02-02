@@ -6,9 +6,8 @@ use tracing::{debug, error, info};
 use crate::proxy::mappers::gemini::{wrap_request, unwrap_response};
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
-use crate::proxy::handlers::common::{determine_retry_strategy, apply_retry_strategy, should_rotate_account, RetryStrategy};
+use crate::proxy::handlers::common::{determine_retry_strategy, apply_retry_strategy, should_rotate_account};
 use crate::proxy::debug_logger;
-use tokio::time::Duration;
  
 const MAX_RETRY_ATTEMPTS: usize = 3;
  

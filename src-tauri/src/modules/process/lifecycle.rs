@@ -11,7 +11,6 @@ use std::time::Duration;
 use std::os::windows::process::CommandExt;
 
 use super::detection::{get_antigravity_pids, is_antigravity_running};
-use super::helpers::load_manual_path;
 use super::paths::get_antigravity_executable_path;
 
 #[cfg(target_os = "macos")]

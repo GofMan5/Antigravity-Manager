@@ -4,8 +4,7 @@
 use super::models::*;
 use bytes::Bytes;
 use futures::StreamExt;
-use serde_json::{json, Value};
-use std::io;
+use serde_json::Value;
 
 /// Collects an OpenAI SSE stream into a complete OpenAIResponse
 pub async fn collect_stream_to_json<S, E>(
@@ -28,7 +27,7 @@ where
     let mut content_parts: Vec<String> = Vec::new();
     let mut reasoning_parts: Vec<String> = Vec::new();
     let mut finish_reason: Option<String> = None;
-    let mut tool_calls: Vec<Value> = Vec::new(); // Store as Value to be flexible with partials
+    let tool_calls: Vec<Value> = Vec::new(); // Store as Value to be flexible with partials
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;

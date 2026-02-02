@@ -12,4 +12,4 @@ pub use cors::cors_layer;
 pub use monitor::monitor_middleware;
 pub use service_status::service_status_middleware;
 pub use auth::{auth_middleware, admin_auth_middleware};
-pub use ip_filter::{ip_filter_middleware, SecurityState, create_security_state, update_security_state};
+pub use ip_filter::{ip_filter_middleware, SecurityState};

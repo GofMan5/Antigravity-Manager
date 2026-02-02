@@ -1,7 +1,6 @@
 // Token Manager Core Structure
 
 use dashmap::DashMap;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;

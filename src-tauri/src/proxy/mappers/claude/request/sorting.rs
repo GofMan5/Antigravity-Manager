@@ -1,6 +1,6 @@
 // Block Sorting and Message Merging Utilities
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use crate::proxy::mappers::claude::models::{ContentBlock, Message, MessageContent};
 
 /// Sort blocks in assistant messages to ensure thinking blocks are first

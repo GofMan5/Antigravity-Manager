@@ -3,7 +3,6 @@
 //! This module defines all API routes and builds the router.
 
 use axum::{
-    extract::DefaultBodyLimit,
     routing::{any, delete, get, post},
     Router,
 };

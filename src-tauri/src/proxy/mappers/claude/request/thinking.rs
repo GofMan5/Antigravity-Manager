@@ -1,7 +1,6 @@
 // Thinking Mode Detection and Validation
 
 use crate::proxy::mappers::claude::models::{ContentBlock, Message, MessageContent};
-use crate::proxy::mappers::signature_store::get_thought_signature;
 
 /// Minimum length for a valid thought_signature
 pub const MIN_SIGNATURE_LENGTH: usize = 50;

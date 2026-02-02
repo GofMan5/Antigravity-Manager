@@ -19,5 +19,4 @@ mod tests;
 
 // Re-export public API
 pub use processor::PartProcessor;
-pub use remapper::remap_function_call_args;
-pub use state::{BlockType, SignatureManager, StreamingState};
+pub use state::{BlockType, StreamingState};

@@ -11,5 +11,4 @@ mod persistence;
 mod scheduling;
 
 // Re-export main types
-pub use models::{TokenLease, ProxyToken};
 pub use manager::TokenManager;
