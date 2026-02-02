@@ -6,7 +6,12 @@ import { invoke } from '@/shared/api';
 import { securityKeys } from './keys';
 import { showToast } from '@/shared/ui';
 import { useTranslation } from 'react-i18next';
-import type { SecuritySettings } from './queries';
+import type { 
+  SecurityMonitorConfig, 
+  AddToBlacklistRequest, 
+  AddToWhitelistRequest,
+  OperationResult,
+} from '@/entities/security';
 
 // Mutations
 export function useAddToBlacklist() {
@@ -14,8 +19,8 @@ export function useAddToBlacklist() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: (data: { ip: string; reason?: string; expires_at?: number }) =>
-      invoke<void>('security_add_to_blacklist', data),
+    mutationFn: (data: AddToBlacklistRequest) =>
+      invoke<OperationResult>('security_add_to_blacklist', { request: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: securityKeys.blacklist() });
       showToast(t('security.toast.added_blacklist', 'Added to blacklist'), 'success');
@@ -31,8 +36,8 @@ export function useAddToWhitelist() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: (data: { ip: string; reason?: string }) =>
-      invoke<void>('security_add_to_whitelist', data),
+    mutationFn: (data: AddToWhitelistRequest) =>
+      invoke<OperationResult>('security_add_to_whitelist', { request: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: securityKeys.whitelist() });
       showToast(t('security.toast.added_whitelist', 'Added to whitelist'), 'success');
@@ -45,7 +50,20 @@ export function useRemoveFromBlacklist() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: (id: string) => invoke<void>('security_remove_from_blacklist', { id }),
+    mutationFn: (ipPattern: string) => invoke<OperationResult>('security_remove_from_blacklist', { ipPattern }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: securityKeys.blacklist() });
+      showToast(t('security.toast.removed', 'Removed'), 'success');
+    },
+  });
+}
+
+export function useRemoveFromBlacklistById() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  return useMutation({
+    mutationFn: (id: number) => invoke<OperationResult>('security_remove_from_blacklist_by_id', { id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: securityKeys.blacklist() });
       showToast(t('security.toast.removed', 'Removed'), 'success');
@@ -58,7 +76,20 @@ export function useRemoveFromWhitelist() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: (id: string) => invoke<void>('security_remove_from_whitelist', { id }),
+    mutationFn: (ipPattern: string) => invoke<OperationResult>('security_remove_from_whitelist', { ipPattern }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: securityKeys.whitelist() });
+      showToast(t('security.toast.removed', 'Removed'), 'success');
+    },
+  });
+}
+
+export function useRemoveFromWhitelistById() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  return useMutation({
+    mutationFn: (id: number) => invoke<OperationResult>('security_remove_from_whitelist_by_id', { id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: securityKeys.whitelist() });
       showToast(t('security.toast.removed', 'Removed'), 'success');
@@ -71,7 +102,7 @@ export function useClearAccessLogs() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: () => invoke<void>('security_clear_access_logs'),
+    mutationFn: () => invoke<OperationResult>('security_clear_all_logs'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: securityKeys.accessLogs() });
       showToast(t('security.toast.logs_cleared', 'Logs cleared'), 'success');
@@ -79,16 +110,32 @@ export function useClearAccessLogs() {
   });
 }
 
-export function useUpdateSecuritySettings() {
+export function useCleanupAccessLogs() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: (settings: SecuritySettings) =>
-      invoke<void>('security_update_settings', { settings }),
+    mutationFn: (days: number) => invoke<OperationResult>('security_cleanup_logs', { days }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: securityKeys.accessLogs() });
+      showToast(t('security.toast.logs_cleaned', 'Old logs cleaned'), 'success');
+    },
+  });
+}
+
+export function useUpdateSecurityConfig() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  return useMutation({
+    mutationFn: (config: SecurityMonitorConfig) =>
+      invoke<void>('update_security_config', { config }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: securityKeys.settings() });
       showToast(t('common.saved', 'Settings saved'), 'success');
     },
   });
 }
+
+// Legacy alias for backward compatibility
+export const useUpdateSecuritySettings = useUpdateSecurityConfig;

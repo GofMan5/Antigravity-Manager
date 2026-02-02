@@ -5,55 +5,54 @@ import { useQuery } from '@tanstack/react-query';
 import { invoke } from '@/shared/api';
 import { securityKeys } from './keys';
 
-// Types (from entities/security or inline)
-export interface IpEntry {
-  id: string;
-  ip: string;
-  reason?: string;
-  created_at: number;
-  expires_at?: number;
-}
+// Re-export types from entities for convenience
+export type {
+  IpBlacklistEntry,
+  IpWhitelistEntry,
+  AccessLogEntry,
+  SecurityStats,
+  SecurityMonitorConfig,
+  BlacklistConfig,
+  WhitelistConfig,
+  AccessLogConfig,
+} from '@/entities/security';
 
-export interface AccessLog {
-  id: string;
-  ip: string;
-  timestamp: number;
-  action: 'allowed' | 'blocked';
-  reason?: string;
-  path?: string;
-}
-
-export interface SecuritySettings {
-  ip_filter_enabled: boolean;
-  default_policy: 'allow' | 'deny';
-  log_blocked_requests: boolean;
-}
+import type {
+  IpBlacklistEntry,
+  IpWhitelistEntry,
+  AccessLogEntry,
+  SecurityMonitorConfig,
+  GetAccessLogsRequest,
+} from '@/entities/security';
 
 // Query hooks
 export function useBlacklist() {
   return useQuery({
     queryKey: securityKeys.blacklist(),
-    queryFn: () => invoke<IpEntry[]>('security_get_blacklist'),
+    queryFn: () => invoke<IpBlacklistEntry[]>('security_get_blacklist'),
   });
 }
 
 export function useWhitelist() {
   return useQuery({
     queryKey: securityKeys.whitelist(),
-    queryFn: () => invoke<IpEntry[]>('security_get_whitelist'),
+    queryFn: () => invoke<IpWhitelistEntry[]>('security_get_whitelist'),
   });
 }
 
-export function useAccessLogs(filters?: { limit?: number; offset?: number }) {
+export function useAccessLogs(filters?: Partial<GetAccessLogsRequest>) {
   return useQuery({
     queryKey: securityKeys.accessLogs(filters),
-    queryFn: () => invoke<AccessLog[]>('security_get_access_logs', filters),
+    queryFn: () => invoke<AccessLogEntry[]>('security_get_access_logs', { request: filters }),
   });
 }
 
-export function useSecuritySettings() {
+export function useSecurityConfig() {
   return useQuery({
     queryKey: securityKeys.settings(),
-    queryFn: () => invoke<SecuritySettings>('security_get_settings'),
+    queryFn: () => invoke<SecurityMonitorConfig>('get_security_config'),
   });
 }
+
+// Legacy alias for backward compatibility
+export const useSecuritySettings = useSecurityConfig;

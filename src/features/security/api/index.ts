@@ -7,17 +7,35 @@ export {
   useBlacklist,
   useWhitelist,
   useAccessLogs,
-  useSecuritySettings,
-  type IpEntry,
-  type AccessLog,
-  type SecuritySettings,
+  useSecurityConfig,
+  useSecuritySettings, // Legacy alias
 } from './queries';
+
+// Re-export types from entities
+export type {
+  IpBlacklistEntry,
+  IpWhitelistEntry,
+  AccessLogEntry,
+  SecurityStats,
+  SecurityMonitorConfig,
+  BlacklistConfig,
+  WhitelistConfig,
+  AccessLogConfig,
+  AddToBlacklistRequest,
+  AddToWhitelistRequest,
+  GetAccessLogsRequest,
+  OperationResult,
+} from '@/entities/security';
 
 export {
   useAddToBlacklist,
   useAddToWhitelist,
   useRemoveFromBlacklist,
+  useRemoveFromBlacklistById,
   useRemoveFromWhitelist,
+  useRemoveFromWhitelistById,
   useClearAccessLogs,
-  useUpdateSecuritySettings,
+  useCleanupAccessLogs,
+  useUpdateSecurityConfig,
+  useUpdateSecuritySettings, // Legacy alias
 } from './mutations';
