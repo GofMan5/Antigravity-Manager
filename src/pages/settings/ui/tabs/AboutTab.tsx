@@ -29,7 +29,7 @@ export const AboutTab = memo(function AboutTab({ appVersion }: AboutTabProps) {
             <p className="text-xs text-zinc-500 mb-2">Advanced API Proxy & Account Management</p>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-xs font-medium">
-                v{appVersion || '5.0.4'}
+                v{appVersion || '5.0.5'}
               </span>
               <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
                 Stable

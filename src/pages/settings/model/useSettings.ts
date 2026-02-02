@@ -23,7 +23,7 @@ export function useSettings() {
   // Initial Load
   useEffect(() => {
     loadConfig();
-    getVersion().then(setAppVersion).catch(() => setAppVersion('5.0.4'));
+    getVersion().then(setAppVersion).catch(() => setAppVersion('5.0.5'));
     invoke<string>('get_data_dir_path').then(setDataDirPath).catch(console.error);
     invoke<{ auto_check: boolean; check_interval_hours: number }>('get_update_settings')
       .then(s => setFormData(p => ({ ...p, auto_check_update: s.auto_check, update_check_interval: s.check_interval_hours })))
