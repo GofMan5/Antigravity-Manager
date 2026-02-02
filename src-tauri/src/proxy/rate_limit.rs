@@ -254,10 +254,11 @@ impl RateLimitTracker {
             }
             None => {
                 // 获取连续失败次数，用于指数退避（带自动过期逻辑）
-                let failure_count = {
+                // [FIX] ServerError (5xx) 不累加 failure_count，避免污染 429 的退避阶梯
+                let failure_count = if reason != RateLimitReason::ServerError {
                     let now = SystemTime::now();
                     // 这里我们使用 account_id 作为 key，不区分模型，
-                    // 因为这里是为了计算连续“账号级”问题的退避。
+                    // 因为这里是为了计算连续"账号级"问题的退避。
                     // 如果需要针对模型的连续失败计数，可能需要改变 failure_counts 的 key。
                     // 暂时保持 account_id，这样如果一个模型一直挂，也会增加计数，符合逻辑。
                     let mut entry = self
@@ -280,6 +281,9 @@ impl RateLimitTracker {
                     entry.0 += 1;
                     entry.1 = now;
                     entry.0
+                } else {
+                    // ServerError (5xx) 使用固定值 1，不累加，避免污染 429 的退避阶梯
+                    1
                 };
 
                 match reason {

@@ -15,6 +15,7 @@ pub struct ProxyRequestLog {
     pub model: Option<String>,        // 客户端请求的模型名
     pub mapped_model: Option<String>, // 实际路由后使用的模型名
     pub account_email: Option<String>,
+    pub client_ip: Option<String>,    // 客户端 IP 地址
     pub error: Option<String>,
     pub request_body: Option<String>,
     pub response_body: Option<String>,
@@ -111,6 +112,21 @@ impl ProxyMonitor {
             if let Err(e) = crate::modules::proxy_db::save_log(&log_to_save) {
                 tracing::error!("Failed to save proxy log to DB: {}", e);
             }
+
+            // [FIX] Sync to Security DB (access_log) so it appears in Security Monitor
+            if let Some(ip) = &log_to_save.client_ip {
+                if let Err(e) = crate::modules::security_db::log_access(
+                    ip,
+                    &log_to_save.url,
+                    &log_to_save.method,
+                    log_to_save.status as i32,
+                    false, // Not blocked (this comes from monitor, so it wasn't blocked by IP filter)
+                    None,  // No block reason
+                    None,  // We don't have UA easily accessible here
+                ) {
+                    tracing::error!("Failed to save security log: {}", e);
+                }
+            }
             
             // Record token stats if available
             if let (Some(account), Some(input), Some(output)) = (
@@ -137,6 +153,7 @@ impl ProxyMonitor {
                 model: log.model.clone(),
                 mapped_model: log.mapped_model.clone(),
                 account_email: log.account_email.clone(),
+                client_ip: log.client_ip.clone(),
                 error: log.error.clone(),
                 request_body: None,  // Don't send body in event
                 response_body: None, // Don't send body in event

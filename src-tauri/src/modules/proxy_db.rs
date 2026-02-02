@@ -131,6 +131,7 @@ pub fn get_logs_summary(limit: usize, offset: usize) -> Result<Vec<ProxyRequestL
                 model: row.get(6)?,
                 mapped_model: row.get(13).unwrap_or(None),
                 account_email: row.get(12).unwrap_or(None),
+                client_ip: None, // Not stored in DB yet
                 error: row.get(7)?,
                 request_body: None,  // Don't query large fields for list view
                 response_body: None, // Don't query large fields for list view
@@ -203,6 +204,7 @@ pub fn get_log_detail(log_id: &str) -> Result<ProxyRequestLog, String> {
             model: row.get(6)?,
             mapped_model: row.get(13).unwrap_or(None),
             account_email: row.get(12).unwrap_or(None),
+            client_ip: None, // Not stored in DB yet
             error: row.get(7)?,
             request_body: row.get(8).unwrap_or(None),
             response_body: row.get(9).unwrap_or(None),
@@ -351,6 +353,7 @@ pub fn get_logs_filtered(
                     model: row.get(6)?,
                     mapped_model: row.get(13).unwrap_or(None),
                     account_email: row.get(12).unwrap_or(None),
+                    client_ip: None,
                     error: row.get(7)?,
                     request_body: None,
                     response_body: None,
@@ -375,6 +378,7 @@ pub fn get_logs_filtered(
                     model: row.get(6)?,
                     mapped_model: row.get(13).unwrap_or(None),
                     account_email: row.get(12).unwrap_or(None),
+                    client_ip: None,
                     error: row.get(7)?,
                     request_body: None,
                     response_body: None,
@@ -399,6 +403,7 @@ pub fn get_logs_filtered(
                     model: row.get(6)?,
                     mapped_model: row.get(13).unwrap_or(None),
                     account_email: row.get(12).unwrap_or(None),
+                    client_ip: None,
                     error: row.get(7)?,
                     request_body: None,
                     response_body: None,
@@ -440,6 +445,7 @@ pub fn get_all_logs_for_export() -> Result<Vec<ProxyRequestLog>, String> {
                 model: row.get(6)?,
                 mapped_model: row.get(13).unwrap_or(None),
                 account_email: row.get(12).unwrap_or(None),
+                client_ip: None,
                 error: row.get(7)?,
                 request_body: row.get(8).unwrap_or(None),
                 response_body: row.get(9).unwrap_or(None),
@@ -499,6 +505,7 @@ pub fn get_logs_by_ids(ids: &[String]) -> Result<Vec<ProxyRequestLog>, String> {
                 model: row.get(6)?,
                 mapped_model: row.get(13).unwrap_or(None),
                 account_email: row.get(12).unwrap_or(None),
+                client_ip: None,
                 error: row.get(7)?,
                 request_body: row.get(8).unwrap_or(None),
                 response_body: row.get(9).unwrap_or(None),

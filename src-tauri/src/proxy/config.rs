@@ -362,6 +362,16 @@ pub struct ProxyConfig {
     /// Security monitor configuration (IP blacklist/whitelist, access logging)
     #[serde(default)]
     pub security_monitor: SecurityMonitorConfig,
+
+    /// [FIX #820] Preferred account ID for fixed account mode
+    /// - None: 使用轮询模式
+    /// - Some(account_id): 固定使用指定账号
+    #[serde(default)]
+    pub preferred_account_id: Option<String>,
+
+    /// Saved User-Agent string (persisted even when override is disabled)
+    #[serde(default)]
+    pub saved_user_agent: Option<String>,
 }
 
 /// 上游代理配置
@@ -393,6 +403,8 @@ impl Default for ProxyConfig {
             scheduling: crate::proxy::sticky_config::StickySessionConfig::default(),
             experimental: ExperimentalConfig::default(),
             security_monitor: SecurityMonitorConfig::default(),
+            preferred_account_id: None,
+            saved_user_agent: None,
         }
     }
 }
