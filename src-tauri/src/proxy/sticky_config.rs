@@ -11,6 +11,8 @@ pub enum SchedulingMode {
     PerformanceFirst,
     /// 指定账号 (Selected): 仅在指定的账号列表中进行负载均衡
     Selected,
+    /// Power-of-2-Choices: 随机选2个账号，选负载最低的，减少热点问题
+    P2C,
 }
 
 impl Default for SchedulingMode {

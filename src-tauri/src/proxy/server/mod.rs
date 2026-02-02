@@ -321,8 +321,6 @@ impl AxumServer {
 
         // Start server in a new task
         let handle = tokio::spawn(async move {
-            use hyper::server::conn::http1;
-            use hyper::server::conn::http2;
             use hyper_util::rt::{TokioExecutor, TokioIo};
             use hyper_util::service::TowerToHyperService;
 
@@ -390,7 +388,32 @@ impl AxumServer {
                         }
                     }
                     _ = &mut shutdown_rx => {
-                        tracing::info!("Proxy server stopped listening");
+                        tracing::info!("Proxy server stopped listening, waiting for active connections to drain...");
+                        
+                        // [PERF] Graceful shutdown: wait for active connections to complete
+                        // Maximum wait time: 30 seconds
+                        let drain_start = std::time::Instant::now();
+                        let max_drain_time = std::time::Duration::from_secs(30);
+                        
+                        loop {
+                            let active = active_connections.load(std::sync::atomic::Ordering::Relaxed);
+                            if active == 0 {
+                                tracing::info!("All connections drained successfully");
+                                break;
+                            }
+                            
+                            if drain_start.elapsed() > max_drain_time {
+                                tracing::warn!(
+                                    "Graceful shutdown timeout reached with {} active connections, forcing shutdown",
+                                    active
+                                );
+                                break;
+                            }
+                            
+                            tracing::debug!("Waiting for {} active connections to drain...", active);
+                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        }
+                        
                         break;
                     }
                 }
@@ -400,14 +423,14 @@ impl AxumServer {
         Ok((server_instance, handle))
     }
 
-    /// Stop the server
+    /// Stop the server with graceful connection draining
     pub fn stop(&self) {
         let tx_mutex = self.shutdown_tx.clone();
         tokio::spawn(async move {
             let mut lock = tx_mutex.lock().await;
             if let Some(tx) = lock.take() {
                 let _ = tx.send(());
-                tracing::info!("Axum server stop signal sent");
+                tracing::info!("Axum server stop signal sent (graceful shutdown initiated)");
             }
         });
     }

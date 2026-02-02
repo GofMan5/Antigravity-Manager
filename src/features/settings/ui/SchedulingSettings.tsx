@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Clock, Users, ArrowRightLeft, Target, Check, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, Users, ArrowRightLeft, Target, Check, Search, ChevronDown, ChevronUp, Shuffle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { cn } from '@/shared/lib';
@@ -137,6 +137,12 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
             desc: t('settings.proxy.scheduling.modes_desc.PerformanceFirst')
         },
         {
+            value: 'P2C' as SchedulingMode,
+            icon: Shuffle,
+            label: t('settings.proxy.scheduling.modes.P2C', { defaultValue: 'P2C' }),
+            desc: t('settings.proxy.scheduling.modes_desc.P2C', { defaultValue: 'Power-of-2-Choices: randomly picks 2 accounts, selects the one with higher quota. Reduces hot-spot issues.' })
+        },
+        {
             value: 'Selected' as SchedulingMode,
             icon: Target,
             label: t('settings.proxy.scheduling.modes.Selected'),
@@ -198,8 +204,8 @@ const SchedulingSettings: React.FC<SchedulingSettingsProps> = ({ config, onChang
             </motion.div>
 
             <AnimatePresence mode="wait">
-                {/* Max Wait Config */}
-                {(currentMode === 'CacheFirst' || currentMode === 'Selected') && (
+                {/* Max Wait Config - only for CacheFirst mode */}
+                {currentMode === 'CacheFirst' && (
                     <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}

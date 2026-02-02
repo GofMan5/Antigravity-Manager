@@ -87,15 +87,16 @@ impl TokenManager {
                     changed = true;
                 }
             } else {
+                // [FIX] Use normalized standard_id for consistency with trigger
                 let protected_models = account_json
                     .get("protected_models")
                     .and_then(|v| v.as_array());
                 let is_protected = protected_models
-                    .map_or(false, |arr| arr.iter().any(|m| m.as_str() == Some(name)));
+                    .map_or(false, |arr| arr.iter().any(|m| m.as_str() == Some(&standard_id)));
 
                 if is_protected {
                     if self
-                        .restore_quota_protection(account_json, &account_id, account_path, name)
+                        .restore_quota_protection(account_json, &account_id, account_path, &standard_id)
                         .await
                         .unwrap_or(false)
                     {

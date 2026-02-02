@@ -33,14 +33,15 @@ export type SchedulingMode =
   | "CacheFirst"
   | "Balance"
   | "PerformanceFirst"
-  | "Selected";
+  | "Selected"
+  | "P2C";
 
 export interface StickySessionConfig {
   mode: SchedulingMode;
   max_wait_seconds: number;
   selected_accounts: string[];
-  selected_models?: Record<string, string[]>;
-  strict_selected?: boolean;
+  selected_models: Record<string, string[]>;
+  strict_selected: boolean;
 }
 
 export type ZaiDispatchMode = "off" | "exclusive" | "pooled" | "fallback";

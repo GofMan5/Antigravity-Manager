@@ -410,8 +410,46 @@ impl TokenManager {
                     }
                 }
 
-                // Round-robin selection
+                // Round-robin or P2C selection based on scheduling mode
                 if target_token.is_none() {
+                    if scheduling.mode == SchedulingMode::P2C {
+                        // P2C selection: pick 2 random from top candidates, choose best
+                        if let Some(selected) = self.select_with_p2c(
+                            &tokens_snapshot,
+                            &attempted,
+                            &normalized_target,
+                            quota_protection_enabled,
+                        ) {
+                            need_update_last_used = Some((selected.account_id.clone(), std::time::Instant::now()));
+                            target_token = Some(selected.clone());
+                        }
+                    } else {
+                        target_token = self
+                            .select_round_robin(
+                                &tokens_snapshot,
+                                &mut attempted,
+                                &normalized_target,
+                                quota_protection_enabled,
+                                session_id,
+                                &scheduling,
+                                &mut need_update_last_used,
+                            )
+                            .await;
+                    }
+                }
+            } else if target_token.is_none() {
+                // Pure round-robin or P2C
+                if scheduling.mode == SchedulingMode::P2C {
+                    if let Some(selected) = self.select_with_p2c(
+                        &tokens_snapshot,
+                        &attempted,
+                        &normalized_target,
+                        quota_protection_enabled,
+                    ) {
+                        need_update_last_used = Some((selected.account_id.clone(), std::time::Instant::now()));
+                        target_token = Some(selected.clone());
+                    }
+                } else {
                     target_token = self
                         .select_round_robin(
                             &tokens_snapshot,
@@ -424,19 +462,6 @@ impl TokenManager {
                         )
                         .await;
                 }
-            } else if target_token.is_none() {
-                // Pure round-robin
-                target_token = self
-                    .select_round_robin(
-                        &tokens_snapshot,
-                        &mut attempted,
-                        &normalized_target,
-                        quota_protection_enabled,
-                        session_id,
-                        &scheduling,
-                        &mut need_update_last_used,
-                    )
-                    .await;
             }
 
             let mut token = match target_token {
@@ -932,7 +957,6 @@ impl TokenManager {
     /// * `attempted` - Set of already-attempted account IDs
     /// * `normalized_target` - Normalized target model name
     /// * `quota_protection_enabled` - Whether quota protection is enabled
-    #[allow(dead_code)]
     fn select_with_p2c<'a>(
         &self,
         candidates: &'a [ProxyToken],
