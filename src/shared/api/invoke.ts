@@ -55,7 +55,7 @@ const COMMAND_MAPPING: Record<string, { url: string; method: 'GET' | 'POST' | 'D
   'get_proxy_logs_filtered': { url: '/api/logs', method: 'GET' },
   'get_proxy_logs_count_filtered': { url: '/api/logs/count', method: 'GET' },
   'clear_proxy_logs': { url: '/api/logs/clear', method: 'POST' },
-  'get_proxy_log_detail': { url: '/api/logs/:logId', method: 'GET' },
+  'get_proxy_log_detail': { url: '/api/logs/:log_id', method: 'GET' },
 
   // CLI Sync
   'get_cli_sync_status': { url: '/api/proxy/cli/status', method: 'POST' },
@@ -118,9 +118,9 @@ const COMMAND_MAPPING: Record<string, { url: string; method: 'GET' | 'POST' | 'D
   'security_get_whitelist': { url: '/api/security/whitelist', method: 'GET' },
   'security_add_to_blacklist': { url: '/api/security/blacklist', method: 'POST' },
   'security_add_to_whitelist': { url: '/api/security/whitelist', method: 'POST' },
-  'security_remove_from_blacklist': { url: '/api/security/blacklist/:id', method: 'DELETE' },
+  'security_remove_from_blacklist': { url: '/api/security/blacklist/by-pattern/:ipPattern', method: 'DELETE' },
   'security_remove_from_blacklist_by_id': { url: '/api/security/blacklist/:id', method: 'DELETE' },
-  'security_remove_from_whitelist': { url: '/api/security/whitelist/:id', method: 'DELETE' },
+  'security_remove_from_whitelist': { url: '/api/security/whitelist/by-pattern/:ipPattern', method: 'DELETE' },
   'security_remove_from_whitelist_by_id': { url: '/api/security/whitelist/:id', method: 'DELETE' },
   'security_is_ip_blacklisted': { url: '/api/security/blacklist/check', method: 'POST' },
   'security_is_ip_whitelisted': { url: '/api/security/whitelist/check', method: 'POST' },

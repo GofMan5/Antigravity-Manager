@@ -61,6 +61,11 @@ pub fn run() {
     if let Err(e) = modules::token_stats::init_db() {
         error!("Failed to initialize token stats database: {}", e);
     }
+
+    // Initialize security database
+    if let Err(e) = modules::security_db::init_db() {
+        error!("Failed to initialize security database: {}", e);
+    }
     
     if is_headless {
         info!("Starting in HEADLESS mode...");
