@@ -4,6 +4,7 @@ use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 use super::models::ProxyToken;
 use crate::proxy::rate_limit::RateLimitTracker;
@@ -24,6 +25,10 @@ pub struct TokenManager {
     pub circuit_breaker: DashMap<String, (std::time::Instant, String)>,
     /// [FIX #820] Preferred account ID for fixed account mode
     pub(crate) preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>,
+    /// [NEW] Cancellation token for graceful shutdown
+    cancel_token: CancellationToken,
+    /// [NEW] Handle for auto-cleanup background task
+    auto_cleanup_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl TokenManager {
@@ -44,6 +49,8 @@ impl TokenManager {
             )),
             circuit_breaker: DashMap::new(),
             preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)),
+            cancel_token: CancellationToken::new(),
+            auto_cleanup_handle: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
@@ -57,71 +64,134 @@ impl TokenManager {
         self.tokens.is_empty()
     }
 
-    /// Start auto-cleanup background task
-    pub fn start_auto_cleanup(&self) {
+    /// Start auto-cleanup background task with cancellation support
+    pub async fn start_auto_cleanup(&self) {
         let tracker = self.rate_limit_tracker.clone();
         let session_map = self.session_accounts.clone();
         let circuit_breaker_clone = self.circuit_breaker.clone();
+        let cancel = self.cancel_token.child_token();
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
             let mut session_cleanup_interval = 0;
 
             loop {
-                interval.tick().await;
-                let cleaned = tracker.cleanup_expired();
-                if cleaned > 0 {
-                    tracing::info!(
-                        "🧹 Auto-cleanup: Removed {} expired rate limit record(s)",
-                        cleaned
-                    );
-                }
-
-                // Clean expired circuit breaker records
-                let now = std::time::Instant::now();
-                let mut cb_cleaned = 0;
-                circuit_breaker_clone.retain(|_, (fail_time, _)| {
-                    if now.duration_since(*fail_time).as_secs() > 600 {
-                        cb_cleaned += 1;
-                        false
-                    } else {
-                        true
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        tracing::info!("Auto-cleanup task received cancel signal");
+                        break;
                     }
-                });
-                if cb_cleaned > 0 {
-                    tracing::info!(
-                        "🔓 Circuit Breaker: Unblocked {} recovered accounts",
-                        cb_cleaned
-                    );
-                }
-
-                // Session cleanup every 10 mins
-                session_cleanup_interval += 1;
-                if session_cleanup_interval >= 40 {
-                    session_cleanup_interval = 0;
-                    let now = std::time::Instant::now();
-                    let expiry = std::time::Duration::from_secs(24 * 3600);
-                    let mut removed_sessions = 0;
-
-                    session_map.retain(|_, (_, ts)| {
-                        if now.duration_since(*ts) > expiry {
-                            removed_sessions += 1;
-                            false
-                        } else {
-                            true
+                    _ = interval.tick() => {
+                        let cleaned = tracker.cleanup_expired();
+                        if cleaned > 0 {
+                            tracing::info!(
+                                "🧹 Auto-cleanup: Removed {} expired rate limit record(s)",
+                                cleaned
+                            );
                         }
-                    });
 
-                    if removed_sessions > 0 {
-                        tracing::info!(
-                            "🧹 Session Cleanup: Removed {} expired sessions",
-                            removed_sessions
-                        );
+                        // Clean expired circuit breaker records
+                        let now = std::time::Instant::now();
+                        let mut cb_cleaned = 0;
+                        circuit_breaker_clone.retain(|_, (fail_time, _)| {
+                            if now.duration_since(*fail_time).as_secs() > 600 {
+                                cb_cleaned += 1;
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                        if cb_cleaned > 0 {
+                            tracing::info!(
+                                "🔓 Circuit Breaker: Unblocked {} recovered accounts",
+                                cb_cleaned
+                            );
+                        }
+
+                        // Session cleanup every 10 mins
+                        session_cleanup_interval += 1;
+                        if session_cleanup_interval >= 40 {
+                            session_cleanup_interval = 0;
+                            let now = std::time::Instant::now();
+                            let expiry = std::time::Duration::from_secs(24 * 3600);
+                            let mut removed_sessions = 0;
+
+                            session_map.retain(|_, (_, ts)| {
+                                if now.duration_since(*ts) > expiry {
+                                    removed_sessions += 1;
+                                    false
+                                } else {
+                                    true
+                                }
+                            });
+
+                            if removed_sessions > 0 {
+                                tracing::info!(
+                                    "🧹 Session Cleanup: Removed {} expired sessions",
+                                    removed_sessions
+                                );
+                            }
+                        }
                     }
                 }
             }
         });
+
+        // Abort old task if exists (prevent task leak), then store new handle
+        let mut guard = self.auto_cleanup_handle.lock().await;
+        if let Some(old) = guard.take() {
+            old.abort();
+            tracing::warn!("Aborted previous auto-cleanup task");
+        }
+        *guard = Some(handle);
+
         tracing::info!("✅ Rate limit & Session auto-cleanup task started");
+    }
+
+    /// Graceful shutdown with timeout
+    ///
+    /// # Arguments
+    /// * `timeout` - Maximum time to wait for tasks to complete
+    pub async fn graceful_shutdown(&self, timeout: std::time::Duration) {
+        tracing::info!("Initiating graceful shutdown of background tasks...");
+
+        // Send cancel signal to all background tasks
+        self.cancel_token.cancel();
+
+        // Wait for tasks to complete with timeout
+        match tokio::time::timeout(timeout, self.abort_background_tasks()).await {
+            Ok(_) => tracing::info!("All background tasks cleaned up gracefully"),
+            Err(_) => tracing::warn!(
+                "Graceful cleanup timed out after {:?}, tasks were force-aborted",
+                timeout
+            ),
+        }
+    }
+
+    /// Abort and wait for all background tasks to complete
+    pub async fn abort_background_tasks(&self) {
+        Self::abort_task(&self.auto_cleanup_handle, "Auto-cleanup task").await;
+    }
+
+    /// Abort a single background task and log the result
+    ///
+    /// # Arguments
+    /// * `handle` - Mutex reference to the task handle
+    /// * `task_name` - Task name for logging
+    async fn abort_task(
+        handle: &tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+        task_name: &str,
+    ) {
+        let Some(handle) = handle.lock().await.take() else {
+            return;
+        };
+
+        handle.abort();
+        match handle.await {
+            Ok(()) => tracing::debug!("{} completed", task_name),
+            Err(e) if e.is_cancelled() => tracing::info!("{} aborted", task_name),
+            Err(e) => tracing::warn!("{} error: {}", task_name, e),
+        }
     }
 
     /// Update circuit breaker configuration at runtime

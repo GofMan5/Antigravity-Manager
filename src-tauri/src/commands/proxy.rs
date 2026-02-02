@@ -121,7 +121,7 @@ pub async fn internal_start_proxy_service(
     let accounts_dir = app_data_dir.clone();
     
     let token_manager = Arc::new(TokenManager::new(accounts_dir));
-    token_manager.start_auto_cleanup();
+    token_manager.start_auto_cleanup().await;
     token_manager.update_sticky_config(config.scheduling.clone()).await;
     
     // [NEW] 加载熔断配置 (从主配置加载)

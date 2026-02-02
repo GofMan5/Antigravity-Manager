@@ -266,4 +266,38 @@ impl TokenManager {
 
         Ok(false)
     }
+
+    /// Read quota percentage for a specific model from JSON file
+    /// Used for precise sorting by target model's quota instead of max
+    ///
+    /// # Arguments
+    /// * `account_path` - Path to account JSON file
+    /// * `model_name` - Target model name (already normalized)
+    #[allow(dead_code)]
+    pub fn get_model_quota_from_json(account_path: &PathBuf, model_name: &str) -> Option<i32> {
+        let content = std::fs::read_to_string(account_path).ok()?;
+        let account: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let models = account.get("quota")?.get("models")?.as_array()?;
+
+        for model in models {
+            if let Some(name) = model.get("name").and_then(|v| v.as_str()) {
+                if crate::proxy::common::model_mapping::normalize_to_standard_id(name)
+                    .unwrap_or_else(|| name.to_string())
+                    == model_name
+                {
+                    return model
+                        .get("percentage")
+                        .and_then(|v| v.as_i64())
+                        .map(|p| p as i32);
+                }
+            }
+        }
+        None
+    }
+
+    /// Test helper: public access to get_model_quota_from_json
+    #[cfg(test)]
+    pub fn get_model_quota_from_json_for_test(account_path: &PathBuf, model_name: &str) -> Option<i32> {
+        Self::get_model_quota_from_json(account_path, model_name)
+    }
 }

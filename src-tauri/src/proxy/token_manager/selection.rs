@@ -6,6 +6,9 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 impl TokenManager {
+    /// P2C pool size - select from top N candidates
+    const P2C_POOL_SIZE: usize = 5;
+
     /// Get a token with timeout protection
     pub async fn get_token(
         &self,
@@ -14,7 +17,8 @@ impl TokenManager {
         session_id: Option<&str>,
         target_model: &str,
     ) -> Result<TokenLease, String> {
-        let timeout_duration = std::time::Duration::from_secs(120);
+        // [FIX] Reduced timeout from 120s to 5s for faster deadlock detection
+        let timeout_duration = std::time::Duration::from_secs(5);
         match tokio::time::timeout(
             timeout_duration,
             self.get_token_internal(quota_group, force_rotate, session_id, target_model),
@@ -882,5 +886,72 @@ impl TokenManager {
             target_model
         );
         false
+    }
+
+    /// Power of 2 Choices (P2C) selection algorithm
+    /// Randomly selects 2 from top 5 candidates, returns the one with higher quota
+    /// This avoids "hot spot" issues where all requests go to the same account
+    ///
+    /// # Arguments
+    /// * `candidates` - Pre-sorted candidate token list
+    /// * `attempted` - Set of already-attempted account IDs
+    /// * `normalized_target` - Normalized target model name
+    /// * `quota_protection_enabled` - Whether quota protection is enabled
+    #[allow(dead_code)]
+    fn select_with_p2c<'a>(
+        &self,
+        candidates: &'a [ProxyToken],
+        attempted: &HashSet<String>,
+        normalized_target: &str,
+        quota_protection_enabled: bool,
+    ) -> Option<&'a ProxyToken> {
+        use rand::Rng;
+
+        // Filter available tokens
+        let available: Vec<&ProxyToken> = candidates
+            .iter()
+            .filter(|t| !attempted.contains(&t.account_id))
+            .filter(|t| !quota_protection_enabled || !t.protected_models.contains(normalized_target))
+            .collect();
+
+        if available.is_empty() {
+            return None;
+        }
+        if available.len() == 1 {
+            return Some(available[0]);
+        }
+
+        // P2C: randomly select 2 from top min(P2C_POOL_SIZE, len) candidates
+        let pool_size = available.len().min(Self::P2C_POOL_SIZE);
+        let mut rng = rand::thread_rng();
+
+        let pick1 = rng.gen_range(0..pool_size);
+        let mut pick2 = rng.gen_range(0..pool_size);
+        // Ensure we pick two different candidates
+        if pick2 == pick1 {
+            pick2 = (pick1 + 1) % pool_size;
+        }
+
+        let c1 = available[pick1];
+        let c2 = available[pick2];
+
+        // Select the one with higher quota
+        let selected = if c1.remaining_quota.unwrap_or(0) >= c2.remaining_quota.unwrap_or(0) {
+            c1
+        } else {
+            c2
+        };
+
+        tracing::debug!(
+            "🎲 [P2C] Selected {} ({}%) from [{}({}%), {}({}%)]",
+            selected.email,
+            selected.remaining_quota.unwrap_or(0),
+            c1.email,
+            c1.remaining_quota.unwrap_or(0),
+            c2.email,
+            c2.remaining_quota.unwrap_or(0)
+        );
+
+        Some(selected)
     }
 }
