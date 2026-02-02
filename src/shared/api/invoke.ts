@@ -113,16 +113,34 @@ const COMMAND_MAPPING: Record<string, { url: string; method: 'GET' | 'POST' | 'D
   'open_data_folder': { url: '/api/system/open-folder', method: 'POST' },
 
   // Security
+  'security_init_db': { url: '/api/security/init', method: 'POST' },
   'security_get_blacklist': { url: '/api/security/blacklist', method: 'GET' },
   'security_get_whitelist': { url: '/api/security/whitelist', method: 'GET' },
   'security_add_to_blacklist': { url: '/api/security/blacklist', method: 'POST' },
   'security_add_to_whitelist': { url: '/api/security/whitelist', method: 'POST' },
   'security_remove_from_blacklist': { url: '/api/security/blacklist/:id', method: 'DELETE' },
+  'security_remove_from_blacklist_by_id': { url: '/api/security/blacklist/:id', method: 'DELETE' },
   'security_remove_from_whitelist': { url: '/api/security/whitelist/:id', method: 'DELETE' },
+  'security_remove_from_whitelist_by_id': { url: '/api/security/whitelist/:id', method: 'DELETE' },
+  'security_is_ip_blacklisted': { url: '/api/security/blacklist/check', method: 'POST' },
+  'security_is_ip_whitelisted': { url: '/api/security/whitelist/check', method: 'POST' },
   'security_get_access_logs': { url: '/api/security/logs', method: 'GET' },
-  'security_clear_access_logs': { url: '/api/security/logs', method: 'DELETE' },
-  'security_get_settings': { url: '/api/security/settings', method: 'GET' },
-  'security_update_settings': { url: '/api/security/settings', method: 'POST' },
+  'security_cleanup_logs': { url: '/api/security/logs/cleanup', method: 'POST' },
+  'security_clear_all_logs': { url: '/api/security/logs', method: 'DELETE' },
+  'security_get_stats': { url: '/api/security/stats', method: 'GET' },
+  'security_clear_blacklist': { url: '/api/security/blacklist/clear', method: 'DELETE' },
+  'security_clear_whitelist': { url: '/api/security/whitelist/clear', method: 'DELETE' },
+  'security_get_ip_token_stats': { url: '/api/security/token-stats', method: 'GET' },
+  'get_security_config': { url: '/api/security/config', method: 'GET' },
+  'update_security_config': { url: '/api/security/config', method: 'POST' },
+
+  // Proxy Preferred Account
+  'get_preferred_account': { url: '/api/proxy/preferred-account', method: 'GET' },
+  'set_preferred_account': { url: '/api/proxy/preferred-account', method: 'POST' },
+
+  // Account Export
+  'export_accounts': { url: '/api/accounts/export', method: 'POST' },
+  'export_accounts_by_ids': { url: '/api/accounts/export', method: 'POST' },
 };
 
 /**

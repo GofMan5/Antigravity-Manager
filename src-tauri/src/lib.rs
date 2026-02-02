@@ -417,24 +417,52 @@ pub fn run() {
             commands::security::security_cleanup_logs,
             commands::security::security_clear_all_logs,
             commands::security::security_get_stats,
+            commands::security::security_clear_blacklist,
+            commands::security::security_clear_whitelist,
+            commands::security::security_get_ip_token_stats,
             commands::security::get_security_config,
             commands::security::update_security_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Handle macOS dock icon click to reopen window
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = event {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                    app_handle.set_activation_policy(tauri::ActivationPolicy::Regular).unwrap_or(());
+            match event {
+                // Handle app exit - cleanup background tasks
+                tauri::RunEvent::Exit => {
+                    tracing::info!("Application exiting, cleaning up background tasks...");
+                    if let Some(state) = app_handle.try_state::<crate::commands::proxy::ProxyServiceState>() {
+                        tauri::async_runtime::block_on(async {
+                            // Use timeout-based read() instead of try_read() to handle lock contention
+                            match tokio::time::timeout(
+                                std::time::Duration::from_secs(3),
+                                state.instance.read()
+                            ).await {
+                                Ok(guard) => {
+                                    if let Some(instance) = guard.as_ref() {
+                                        // Use graceful_shutdown with 2s timeout for task cleanup
+                                        instance.token_manager
+                                            .graceful_shutdown(std::time::Duration::from_secs(2))
+                                            .await;
+                                    }
+                                }
+                                Err(_) => {
+                                    tracing::warn!("Lock acquisition timed out after 3s, forcing exit");
+                                }
+                            }
+                        });
+                    }
                 }
+                // Handle macOS dock icon click to reopen window
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                        app_handle.set_activation_policy(tauri::ActivationPolicy::Regular).unwrap_or(());
+                    }
+                }
+                _ => {}
             }
-            // Suppress unused variable warnings on non-macOS platforms
-            #[cfg(not(target_os = "macos"))]
-            let _ = (app_handle, event);
         });
 }

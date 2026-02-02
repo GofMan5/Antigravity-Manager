@@ -280,6 +280,61 @@ pub async fn security_get_stats() -> Result<SecurityStats, SecurityError> {
 }
 
 // ============================================================================
+// CLEAR COMMANDS (compatibility with Original API)
+// ============================================================================
+
+/// Clear all blacklist entries
+#[tauri::command]
+pub async fn security_clear_blacklist() -> Result<OperationResult, SecurityError> {
+    let entries = security_db::get_blacklist().map_err(SecurityError::from)?;
+    let mut removed_count = 0;
+
+    for entry in entries {
+        if security_db::remove_from_blacklist(&entry.ip_pattern).map_err(SecurityError::from)? {
+            removed_count += 1;
+        }
+    }
+
+    Ok(OperationResult {
+        success: true,
+        message: format!("Cleared {} blacklist entries", removed_count),
+        id: None,
+    })
+}
+
+/// Clear all whitelist entries
+#[tauri::command]
+pub async fn security_clear_whitelist() -> Result<OperationResult, SecurityError> {
+    let entries = security_db::get_whitelist().map_err(SecurityError::from)?;
+    let mut removed_count = 0;
+
+    for entry in entries {
+        if security_db::remove_from_whitelist(&entry.ip_pattern).map_err(SecurityError::from)? {
+            removed_count += 1;
+        }
+    }
+
+    Ok(OperationResult {
+        success: true,
+        message: format!("Cleared {} whitelist entries", removed_count),
+        id: None,
+    })
+}
+
+/// Get IP token consumption statistics
+#[tauri::command]
+pub async fn security_get_ip_token_stats(
+    limit: Option<usize>,
+    hours: Option<i64>,
+) -> Result<Vec<crate::modules::proxy_db::IpTokenStats>, SecurityError> {
+    crate::modules::proxy_db::get_token_usage_by_ip(
+        limit.unwrap_or(100),
+        hours.unwrap_or(720),
+    )
+    .map_err(SecurityError::from)
+}
+
+// ============================================================================
 // CONFIG COMMANDS
 // ============================================================================
 
