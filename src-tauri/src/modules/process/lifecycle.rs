@@ -16,7 +16,10 @@ use super::paths::get_antigravity_executable_path;
 #[cfg(target_os = "macos")]
 use super::helpers::is_helper_by_name_macos;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use super::helpers::load_manual_path;
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use sysinfo::System;
 
 /// Close Antigravity processes.
