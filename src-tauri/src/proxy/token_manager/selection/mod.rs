@@ -360,7 +360,7 @@ impl TokenManager {
         None
     }
 
-    /// Filter tokens based on verification, validation, circuit breaker, and quota
+    /// Filter tokens based on verification, validation, circuit breaker, quota, and rate limits
     fn filter_tokens(
         &self,
         tokens_snapshot: &mut Vec<ProxyToken>,
@@ -368,6 +368,8 @@ impl TokenManager {
         normalized_target: &str,
         cb_enabled: bool,
     ) {
+        let initial_count = tokens_snapshot.len();
+
         tokens_snapshot.retain(|t| {
             // [NEW] Verification required check (permanent block until manual verification)
             if t.verification_needed {
@@ -390,6 +392,19 @@ impl TokenManager {
                     return false;
                 }
             }
+
+            // [FIX] Check remaining_quota - accounts with zero quota should be skipped
+            if t.remaining_quota.map(|q| q <= 0).unwrap_or(false) {
+                tracing::debug!(
+                    "  ⛔ {} - SKIP: Zero remaining quota ({:?})",
+                    t.email,
+                    t.remaining_quota
+                );
+                return false;
+            }
+
+            // NOTE: Rate limit check is done later in select_round_robin() and try_60s_lock()
+            // Cannot use is_rate_limited_sync() here as it causes blocking_read() deadlock in async context
 
             // Circuit breaker check
             if cb_enabled {
@@ -461,6 +476,18 @@ impl TokenManager {
 
             true
         });
+
+        // [FIX] Log filtering results for diagnostics
+        let filtered_count = initial_count - tokens_snapshot.len();
+        if filtered_count > 0 {
+            tracing::info!(
+                "🔍 [Filter] Model '{}': {} of {} accounts filtered out, {} remaining",
+                target_model,
+                filtered_count,
+                initial_count,
+                tokens_snapshot.len()
+            );
+        }
     }
 
     /// Apply selected mode filtering
@@ -587,8 +614,16 @@ impl TokenManager {
         use crate::proxy::sticky_config::SchedulingMode;
 
         if scheduling.mode == SchedulingMode::P2C {
+            // Pre-filter rate limited accounts for P2C (async context)
+            let mut available_for_p2c: Vec<ProxyToken> = Vec::new();
+            for t in tokens_snapshot.iter() {
+                if !self.is_rate_limited(&t.account_id, Some(normalized_target)).await {
+                    available_for_p2c.push(t.clone());
+                }
+            }
+
             if let Some(selected) = self.select_with_p2c(
-                tokens_snapshot,
+                &available_for_p2c,
                 attempted,
                 normalized_target,
                 quota_protection_enabled,
