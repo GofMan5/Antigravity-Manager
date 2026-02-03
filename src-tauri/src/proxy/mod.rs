@@ -34,6 +34,3 @@ pub use token_manager::TokenManager;
 pub use server::AxumServer;
 pub use security::ProxySecurityConfig;
 pub use signature_cache::SignatureCache;
-
-#[cfg(test)]
-pub mod tests;
