@@ -6,7 +6,7 @@ import { X, ExternalLink, ArrowRight, Rocket } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@/shared/api';
 import { useTranslation } from 'react-i18next';
-import { open } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { isTauri } from '@/shared/lib';
 
 interface UpdateInfo {
@@ -49,7 +49,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
   const handleOpenReleases = async () => {
     try {
       if (isTauri()) {
-        await open(RELEASES_URL);
+        await openUrl(RELEASES_URL);
       } else {
         window.open(RELEASES_URL, '_blank');
       }
