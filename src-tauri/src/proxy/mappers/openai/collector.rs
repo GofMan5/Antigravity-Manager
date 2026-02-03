@@ -27,7 +27,7 @@ where
     let mut content_parts: Vec<String> = Vec::new();
     let mut reasoning_parts: Vec<String> = Vec::new();
     let mut finish_reason: Option<String> = None;
-    let tool_calls: Vec<Value> = Vec::new(); // Store as Value to be flexible with partials
+    let _tool_calls: Vec<Value> = Vec::new(); // Store as Value to be flexible with partials
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;

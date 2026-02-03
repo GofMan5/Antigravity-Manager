@@ -8,6 +8,7 @@ mod integration_tests {
     use crate::modules::security_db::{
         self, init_db, add_to_blacklist, remove_from_blacklist,
         add_to_whitelist, remove_from_whitelist, get_blacklist, get_whitelist,
+        log_access, get_access_logs, clear_all_logs,
     };
     use std::time::Duration;
 
@@ -15,12 +16,12 @@ mod integration_tests {
     fn cleanup_test_data() {
         if let Ok(entries) = get_blacklist() {
             for entry in entries {
-                let _ = remove_from_blacklist(&entry.id);
+                let _ = remove_from_blacklist(&entry.ip_pattern);
             }
         }
         if let Ok(entries) = get_whitelist() {
             for entry in entries {
-                let _ = remove_from_whitelist(&entry.id);
+                let _ = remove_from_whitelist(&entry.ip_pattern);
             }
         }
     }
@@ -43,7 +44,7 @@ mod integration_tests {
         // 添加测试 IP 到黑名单
         let entry = add_to_blacklist(
             "192.168.100.100",
-            Some("Integration test - malicious activity"),
+            "Integration test - malicious activity",
             None,
             "integration_test",
         );
@@ -80,7 +81,7 @@ mod integration_tests {
         // 添加 IP 到黑名单
         let _ = add_to_blacklist(
             "10.0.0.50",
-            Some("Should be overridden by whitelist"),
+            "Should be overridden by whitelist",
             None,
             "test",
         );
@@ -88,7 +89,8 @@ mod integration_tests {
         // 添加相同 IP 到白名单
         let _ = add_to_whitelist(
             "10.0.0.50",
-            Some("Trusted - override blacklist"),
+            "Trusted - override blacklist",
+            "test",
         );
 
         // 验证两个列表都包含该 IP
@@ -126,7 +128,7 @@ mod integration_tests {
         // 添加已过期的临时封禁
         let _ = add_to_blacklist(
             "expired.ban.test",
-            Some("Temporary ban - should be expired"),
+            "Temporary ban - should be expired",
             Some(now - 60), // 1分钟前过期
             "test",
         );
@@ -156,7 +158,7 @@ mod integration_tests {
         // 封禁整个子网
         let _ = add_to_blacklist(
             "192.168.1.0/24",
-            Some("Entire subnet blocked"),
+            "Entire subnet blocked",
             None,
             "test",
         );
@@ -203,7 +205,7 @@ mod integration_tests {
         // 添加临时封禁（2小时后过期）
         let _ = add_to_blacklist(
             "temp.ban.message",
-            Some("Rate limit exceeded"),
+            "Rate limit exceeded",
             Some(now + 7200), // 2小时后
             "rate_limiter",
         );
@@ -213,7 +215,7 @@ mod integration_tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(entry.reason.as_deref(), Some("Rate limit exceeded"));
+        assert_eq!(entry.reason, "Rate limit exceeded");
         assert!(entry.expires_at.is_some());
         
         let remaining = entry.expires_at.unwrap() - now;
@@ -237,33 +239,24 @@ mod integration_tests {
         let _ = init_db();
         cleanup_test_data();
 
-        // 模拟保存被阻止的访问日志
-        let log = security_db::IpAccessLog {
-            id: uuid::Uuid::new_v4().to_string(),
-            client_ip: "blocked.request.test".to_string(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-            method: Some("POST".to_string()),
-            path: Some("/v1/messages".to_string()),
-            user_agent: Some("TestClient/1.0".to_string()),
-            status: Some(403),
-            duration: Some(0),
-            api_key_hash: None,
-            blocked: true,
-            block_reason: Some("IP in blacklist".to_string()),
-        };
-
-        let save_result = security_db::save_ip_access_log(&log);
+        // 使用正确的 log_access 函数记录被阻止的访问
+        let save_result = log_access(
+            "blocked.request.test",
+            "/v1/messages",
+            "POST",
+            403,
+            true,
+            Some("IP in blacklist"),
+            Some("TestClient/1.0"),
+        );
         assert!(save_result.is_ok());
 
         // 验证日志可以检索
-        let logs = security_db::get_ip_access_logs(10, 0, None, true).unwrap();
-        let found = logs.iter().any(|l| l.client_ip == "blocked.request.test");
+        let logs = get_access_logs(10, 0, true, None).unwrap();
+        let found = logs.iter().any(|l| l.ip_address == "blocked.request.test");
         assert!(found, "Blocked request should be logged");
 
-        let _ = security_db::clear_ip_access_logs();
+        let _ = clear_all_logs();
     }
 
     // ============================================================================
@@ -282,12 +275,12 @@ mod integration_tests {
 
         // 添加一些黑名单条目
         for i in 0..50 {
-            let _ = add_to_blacklist(&format!("perf.test.{}", i), None, None, "test");
+            let _ = add_to_blacklist(&format!("perf.test.{}", i), "", None, "test");
         }
 
         // 添加一些 CIDR 规则
         for i in 0..10 {
-            let _ = add_to_blacklist(&format!("172.{}.0.0/16", i), None, None, "test");
+            let _ = add_to_blacklist(&format!("172.{}.0.0/16", i), "", None, "test");
         }
 
         // 测试查找性能
@@ -329,8 +322,8 @@ mod integration_tests {
         cleanup_test_data();
 
         // 添加数据
-        let _ = add_to_blacklist("persist.test.ip", Some("Persistence test"), None, "test");
-        let _ = add_to_whitelist("persist.white.ip", Some("Persistence test"));
+        let _ = add_to_blacklist("persist.test.ip", "Persistence test", None, "test");
+        let _ = add_to_whitelist("persist.white.ip", "Persistence test", "test");
 
         // 重新初始化（实际上只是验证数据仍然可读）
         let _ = init_db();
@@ -351,8 +344,7 @@ mod integration_tests {
 mod stress_tests {
     use crate::modules::security_db::{
         init_db, add_to_blacklist, remove_from_blacklist,
-        is_ip_in_blacklist, get_blacklist, save_ip_access_log,
-        IpAccessLog, clear_ip_access_logs,
+        is_ip_in_blacklist, get_blacklist, log_access, clear_all_logs,
     };
     use std::thread;
     use std::time::{Duration, Instant};
@@ -361,10 +353,10 @@ mod stress_tests {
     fn cleanup_test_data() {
         if let Ok(entries) = get_blacklist() {
             for entry in entries {
-                let _ = remove_from_blacklist(&entry.id);
+                let _ = remove_from_blacklist(&entry.ip_pattern);
             }
         }
-        let _ = clear_ip_access_logs();
+        let _ = clear_all_logs();
     }
 
     /// 压力测试：大量黑名单条目
@@ -378,7 +370,7 @@ mod stress_tests {
         // 批量添加
         let start = Instant::now();
         for i in 0..count {
-            let _ = add_to_blacklist(&format!("stress.{}.{}.{}.{}", i/256, (i/16)%16, i%16, i), None, None, "stress");
+            let _ = add_to_blacklist(&format!("stress.{}.{}.{}.{}", i/256, (i/16)%16, i%16, i), "", None, "stress");
         }
         let add_duration = start.elapsed();
         println!("Added {} entries in {:?}", count, add_duration);
@@ -404,31 +396,22 @@ mod stress_tests {
     #[test]
     fn stress_test_access_logging() {
         let _ = init_db();
-        let _ = clear_ip_access_logs();
+        let _ = clear_all_logs();
 
         let count = 1000;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
 
         // 批量写入日志
         let start = Instant::now();
         for i in 0..count {
-            let log = IpAccessLog {
-                id: uuid::Uuid::new_v4().to_string(),
-                client_ip: format!("log.stress.{}", i % 100),
-                timestamp: now,
-                method: Some("POST".to_string()),
-                path: Some("/v1/messages".to_string()),
-                user_agent: Some("StressTest/1.0".to_string()),
-                status: Some(200),
-                duration: Some(100),
-                api_key_hash: Some("hash".to_string()),
-                blocked: false,
-                block_reason: None,
-            };
-            let _ = save_ip_access_log(&log);
+            let _ = log_access(
+                &format!("log.stress.{}", i % 100),
+                "/v1/messages",
+                "POST",
+                200,
+                false,
+                None,
+                Some("StressTest/1.0"),
+            );
         }
         let write_duration = start.elapsed();
         println!("Wrote {} access logs in {:?}", count, write_duration);
@@ -439,7 +422,7 @@ mod stress_tests {
             "Access log writing should be reasonably fast"
         );
 
-        let _ = clear_ip_access_logs();
+        let _ = clear_all_logs();
     }
 
     /// 压力测试：并发操作
@@ -457,9 +440,9 @@ mod stress_tests {
                     for i in 0..ops_per_thread {
                         // 每个线程添加-查询-删除
                         let ip = format!("concurrent.{}.{}", t, i);
-                        if let Ok(entry) = add_to_blacklist(&ip, None, None, "concurrent") {
+                        if add_to_blacklist(&ip, "", None, "concurrent").is_ok() {
                             let _ = is_ip_in_blacklist(&ip);
-                            let _ = remove_from_blacklist(&entry.id);
+                            let _ = remove_from_blacklist(&ip);
                         }
                     }
                 })
