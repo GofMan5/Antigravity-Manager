@@ -6,6 +6,7 @@ pub mod request;
 pub mod response;
 pub mod streaming;
 pub mod collector; // [NEW]
+pub mod thinking_recovery;
 
 pub use models::*;
 pub use request::*;

@@ -3,7 +3,6 @@
 
 use super::thinking::{is_model_compatible, MIN_SIGNATURE_LENGTH};
 use crate::proxy::mappers::claude::models::*;
-use crate::proxy::mappers::signature_store::get_thought_signature;
 use crate::proxy::mappers::tool_result_compressor;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -275,16 +274,6 @@ pub fn build_contents(
                                         );
                                         s
                                     })
-                            })
-                            .or_else(|| {
-                                let global_sig = get_thought_signature();
-                                if global_sig.is_some() {
-                                    tracing::warn!(
-                                        "[Claude-Request] Using deprecated GLOBAL thought_signature fallback (length: {})",
-                                        global_sig.as_ref().unwrap().len()
-                                    );
-                                }
-                                global_sig
                             });
 
                         // Validate signature before using

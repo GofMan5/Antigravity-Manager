@@ -257,7 +257,12 @@ pub async fn handle_chat_completions(
                 );
 
                 let mut openai_stream =
-                    create_openai_sse_stream(gemini_stream, openai_req.model.clone());
+                    create_openai_sse_stream(
+                        gemini_stream,
+                        openai_req.model.clone(),
+                        session_id.clone(),
+                        openai_req.messages.len(),
+                    );
 
                 let mut first_data_chunk = None;
                 let mut retry_this_account = false;
@@ -345,6 +350,8 @@ pub async fn handle_chat_completions(
                     match collect_stream_to_json(Box::pin(combined_stream)).await {
                         Ok(full_response) => {
                             info!("[{}] ✓ Stream collected and converted to JSON", trace_id);
+                            crate::proxy::SignatureCache::global()
+                                .delete_session_signature(&session_id);
                             return Ok((
                                 StatusCode::OK,
                                 [

@@ -52,19 +52,19 @@ pub fn should_enable_thinking_by_default(model: &str) -> bool {
         return true;
     }
 
-    // Enable thinking by default for Opus 4.6 variants
-    if model_lower.contains("opus-4-6") || model_lower.contains("opus-4.6") {
+    // Enable thinking by default for Opus 4.5 variants
+    if model_lower.contains("opus-4-5") || model_lower.contains("opus-4.5") {
         tracing::debug!(
-            "[Thinking-Mode] Auto-enabling thinking for Opus 4.6 model: {}",
+            "[Thinking-Mode] Auto-enabling thinking for Opus 4.5 model: {}",
             model
         );
         return true;
     }
 
-    // Enable thinking by default for Opus 4.5 variants
-    if model_lower.contains("opus-4-5") || model_lower.contains("opus-4.5") {
+    // [FIX #1557] Enable thinking by default for Gemini Pro families.
+    if model_lower.contains("gemini-2.0-pro") || model_lower.contains("gemini-3-pro") {
         tracing::debug!(
-            "[Thinking-Mode] Auto-enabling thinking for Opus 4.5 model: {}",
+            "[Thinking-Mode] Auto-enabling thinking for Gemini Pro model: {}",
             model
         );
         return true;

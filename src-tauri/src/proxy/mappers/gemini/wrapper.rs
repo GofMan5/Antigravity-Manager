@@ -47,49 +47,80 @@ pub fn wrap_request(body: &Value, project_id: &str, mapped_model: &str, session_
     // This applies to both Flash and Pro models
     {
         let tb_config = crate::proxy::config::get_thinking_budget_config();
-        if let Some(gen_config) = inner_request.get_mut("generationConfig") {
-            if let Some(thinking_config) = gen_config.get_mut("thinkingConfig") {
-                if let Some(budget_val) = thinking_config.get("thinkingBudget") {
-                    if let Some(budget) = budget_val.as_u64() {
-                        let final_budget = match tb_config.mode {
-                            crate::proxy::config::ThinkingBudgetMode::Custom => {
-                                let custom = tb_config.custom_value as u64;
-                                if custom > 24576 {
-                                    tracing::warn!(
-                                        "[Gemini-Wrap] Custom mode: capping thinking_budget from {} to 24576 for model {}",
-                                        custom, final_model_name
-                                    );
-                                    24576
-                                } else {
-                                    custom
-                                }
-                            }
-                            crate::proxy::config::ThinkingBudgetMode::Passthrough => budget,
-                            crate::proxy::config::ThinkingBudgetMode::Auto => {
-                                if budget > 24576 {
-                                    tracing::info!(
-                                        "[Gemini-Wrap] Auto mode: capping thinking_budget from {} to 24576 for model {}", 
-                                        budget, final_model_name
-                                    );
-                                    24576
-                                } else {
-                                    budget
-                                }
-                            }
-                        };
-                        
-                        if final_budget != budget {
-                            thinking_config["thinkingBudget"] = json!(final_budget);
-                        }
-                    }
-                } else {
-                    // [FIX] 如果没有 thinkingBudget 但有 thinkingConfig，注入默认值
-                    if thinking_config.get("includeThoughts").and_then(|v| v.as_bool()).unwrap_or(false) {
-                        thinking_config["thinkingBudget"] = json!(24576);
-                        tracing::debug!(
-                            "[Gemini-Wrap] Injected default thinkingBudget=24576 for model {}",
-                            final_model_name
+        let lower_model = final_model_name.to_lowercase();
+        let should_process_thinking = lower_model.contains("flash")
+            || lower_model.contains("pro")
+            || lower_model.contains("thinking");
+
+        if should_process_thinking {
+            if let Some(req_obj) = inner_request.as_object_mut() {
+                let gen_cfg = req_obj
+                    .entry("generationConfig".to_string())
+                    .or_insert_with(|| json!({}));
+
+                if let Some(gen_obj) = gen_cfg.as_object_mut() {
+                    let should_inject_default = gen_obj.get("thinkingConfig").is_none()
+                        && (lower_model.contains("thinking")
+                            || lower_model.contains("gemini-2.0-pro")
+                            || lower_model.contains("gemini-3-pro"));
+
+                    if should_inject_default {
+                        gen_obj.insert(
+                            "thinkingConfig".to_string(),
+                            json!({
+                                "includeThoughts": true,
+                                "thinkingBudget": 16000
+                            }),
                         );
+                    }
+
+                    if let Some(thinking_config) = gen_obj.get_mut("thinkingConfig") {
+                        if let Some(budget_val) = thinking_config.get("thinkingBudget") {
+                            if let Some(budget) = budget_val.as_u64() {
+                                let final_budget = match tb_config.mode {
+                                    crate::proxy::config::ThinkingBudgetMode::Custom => {
+                                        let custom = tb_config.custom_value as u64;
+                                        if custom > 24576 {
+                                            tracing::warn!(
+                                                "[Gemini-Wrap] Custom mode: capping thinking_budget from {} to 24576 for model {}",
+                                                custom,
+                                                final_model_name
+                                            );
+                                            24576
+                                        } else {
+                                            custom
+                                        }
+                                    }
+                                    crate::proxy::config::ThinkingBudgetMode::Passthrough => budget,
+                                    crate::proxy::config::ThinkingBudgetMode::Auto => {
+                                        if budget > 24576 {
+                                            tracing::info!(
+                                                "[Gemini-Wrap] Auto mode: capping thinking_budget from {} to 24576 for model {}",
+                                                budget,
+                                                final_model_name
+                                            );
+                                            24576
+                                        } else {
+                                            budget
+                                        }
+                                    }
+                                };
+
+                                if final_budget != budget {
+                                    thinking_config["thinkingBudget"] = json!(final_budget);
+                                }
+                            }
+                        } else if thinking_config
+                            .get("includeThoughts")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                        {
+                            thinking_config["thinkingBudget"] = json!(24576);
+                            tracing::debug!(
+                                "[Gemini-Wrap] Injected default thinkingBudget=24576 for model {}",
+                                final_model_name
+                            );
+                        }
                     }
                 }
             }
@@ -369,7 +400,7 @@ mod tests {
         let budget = gen_config["thinkingConfig"]["thinkingBudget"].as_u64().unwrap();
         assert_eq!(budget, 24576);
 
-        // Test with Pro model - should NOT cap
+        // Test with Pro model - should cap at 24576 in Auto mode
         let body_pro = json!({
             "model": "gemini-2.0-pro-exp",
             "generationConfig": {
@@ -381,7 +412,58 @@ mod tests {
         });
         let result_pro = wrap_request(&body_pro, "test-proj", "gemini-2.0-pro-exp", None);
         let budget_pro = result_pro["request"]["generationConfig"]["thinkingConfig"]["thinkingBudget"].as_u64().unwrap();
-        assert_eq!(budget_pro, 32000);
+        assert_eq!(budget_pro, 24576);
+    }
+
+    #[test]
+    fn test_gemini_pro_thinking_budget_processing() {
+        use crate::proxy::config::{
+            update_thinking_budget_config, ThinkingBudgetConfig, ThinkingBudgetMode,
+        };
+
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Custom,
+            custom_value: 1024,
+        });
+
+        let body = json!({
+            "model": "gemini-3-pro-preview",
+            "generationConfig": {
+                "thinkingConfig": {
+                    "includeThoughts": true,
+                    "thinkingBudget": 32000
+                }
+            }
+        });
+
+        let result = wrap_request(&body, "test-proj", "gemini-3-pro-preview", None);
+        let req = result.get("request").unwrap();
+        let gen_config = req.get("generationConfig").unwrap();
+
+        let budget = gen_config["thinkingConfig"]["thinkingBudget"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(budget, 1024);
+
+        update_thinking_budget_config(ThinkingBudgetConfig::default());
+    }
+
+    #[test]
+    fn test_gemini_pro_auto_inject_thinking() {
+        let body = json!({
+            "model": "gemini-3-pro-preview",
+            "generationConfig": {}
+        });
+
+        let result = wrap_request(&body, "test-proj", "gemini-3-pro-preview", None);
+        let req = result.get("request").unwrap();
+        let gen_config = req.get("generationConfig").unwrap();
+
+        assert!(gen_config.get("thinkingConfig").is_some());
+        let budget = gen_config["thinkingConfig"]["thinkingBudget"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(budget, 16000);
     }
 
     #[test]

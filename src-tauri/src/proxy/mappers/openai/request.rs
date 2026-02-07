@@ -1,13 +1,16 @@
 // OpenAI → Gemini 请求转换
 use super::models::*;
-use super::streaming::get_thought_signature;
 use serde_json::{json, Value};
+use crate::proxy::session_manager::SessionManager;
 
 pub fn transform_openai_request(
     request: &OpenAIRequest,
     project_id: &str,
     mapped_model: &str,
 ) -> Value {
+    let session_id = SessionManager::extract_openai_session_id(request);
+    let message_count = request.messages.len();
+
     // 将 OpenAI 工具转为 Value 数组以便探测
     let tools_val = request
         .tools
@@ -25,10 +28,11 @@ pub fn transform_openai_request(
         request.quality.as_deref()  // [NEW] Pass quality parameter
     );
 
-    // [FIX] 仅当模型名称显式包含 "-thinking" 时才视为 Gemini 思维模型
-    // 避免对 gemini-3-pro (preview) 等其实不支持 thinkingConfig 的模型注入参数导致 400
-    let is_gemini_3_thinking = mapped_model_lower.contains("gemini") 
-        && mapped_model_lower.contains("-thinking") 
+    // [FIX #1557] Gemini Pro family is also thinking-capable.
+    let is_gemini_3_thinking = mapped_model_lower.contains("gemini")
+        && (mapped_model_lower.contains("-thinking")
+            || mapped_model_lower.contains("gemini-2.0-pro")
+            || mapped_model_lower.contains("gemini-3-pro"))
         && !mapped_model_lower.contains("claude");
     let is_claude_thinking = mapped_model_lower.ends_with("-thinking");
     // [NEW] PR #1641: Auto-enable thinking for Opus 4.6 models
@@ -51,9 +55,13 @@ pub fn transform_openai_request(
                 .map(|s| s.is_empty())
                 .unwrap_or(true)
     });
+    let has_tool_history = request
+        .messages
+        .iter()
+        .any(|msg| msg.role == "tool" || msg.role == "function" || msg.tool_calls.is_some());
 
-    // 获取全局存储的思维签名
-    let global_thought_sig = get_thought_signature();
+    let global_thought_sig = crate::proxy::SignatureCache::global()
+        .get_session_signature(&session_id);
 
     // [NEW] 决定是否开启 Thinking 功能:
     // 1. 模型名包含 -thinking 时自动开启
@@ -127,12 +135,11 @@ pub fn transform_openai_request(
         }
     }
 
-    // 从全局存储获取 thoughtSignature 支持
-    let global_thought_sig = get_thought_signature();
-    if global_thought_sig.is_some() {
+    // Prefer session-isolated signature cache to avoid cross-session pollution.
+    if let Some(sig) = &global_thought_sig {
         tracing::debug!(
             "从全局存储获取到 thoughtSignature (长度: {})",
-            global_thought_sig.as_ref().unwrap().len()
+            sig.len()
         );
     }
 
@@ -158,7 +165,7 @@ pub fn transform_openai_request(
     }
 
     // 2. 构建 Gemini contents (过滤掉 system/developer 指令)
-    let contents: Vec<Value> = request
+    let mut contents: Vec<Value> = request
         .messages
         .iter()
         .filter(|msg| msg.role != "system" && msg.role != "developer")
@@ -320,6 +327,11 @@ pub fn transform_openai_request(
                     // [修复] 为该消息内的所有工具调用注入 thoughtSignature
                     if let Some(ref sig) = global_thought_sig {
                         func_call_part["thoughtSignature"] = json!(sig);
+                        crate::proxy::SignatureCache::global().cache_session_signature(
+                            &session_id,
+                            sig.clone(),
+                            message_count,
+                        );
                     } else if is_thinking_model && !mapped_model.starts_with("projects/") {
                         // [NEW] Handle missing signature for Gemini thinking models
                         tracing::debug!("[OpenAI-Signature] Adding GEMINI_SKIP_SIGNATURE for tool_use: {}", tc.id);
@@ -356,6 +368,10 @@ pub fn transform_openai_request(
         })
         .filter(|msg| !msg["parts"].as_array().map(|a| a.is_empty()).unwrap_or(true))
         .collect();
+
+    if actual_include_thinking && has_tool_history {
+        contents = super::thinking_recovery::strip_all_thinking_blocks(contents);
+    }
 
     // 合并连续相同角色的消息 (Gemini 强制要求 user/model 交替)
     let mut merged_contents: Vec<Value> = Vec::new();
@@ -739,14 +755,62 @@ mod tests {
             thinking: None,
         };
 
-        let result = transform_openai_request(&req, "test-p", "gemini-3-pro-high-thinking");
+        let result = transform_openai_request(&req, "test-p", "gemini-2.0-pro-high-thinking");
         let gen_config = &result["request"]["generationConfig"];
         let max_output_tokens = gen_config["maxOutputTokens"].as_i64().unwrap();
-        // budget(32000) + 8192 = 40192
-        assert_eq!(max_output_tokens, 40192);
+        // budget(24576) + 8192 = 32768
+        assert_eq!(max_output_tokens, 32768);
         
         // Verify thinkingBudget
         let budget = gen_config["thinkingConfig"]["thinkingBudget"].as_i64().unwrap();
-        assert_eq!(budget, 32000);
+        assert_eq!(budget, 24576);
+    }
+
+    #[test]
+    fn test_gemini_pro_thinking_injection() {
+        let req = OpenAIRequest {
+            model: "gemini-3-pro-preview".to_string(),
+            messages: vec![OpenAIMessage {
+                role: "user".to_string(),
+                content: Some(OpenAIContent::String("Thinking test".to_string())),
+                reasoning_content: None,
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+            }],
+            stream: false,
+            n: None,
+            max_tokens: None,
+            temperature: None,
+            top_p: None,
+            stop: None,
+            response_format: None,
+            tools: None,
+            tool_choice: None,
+            parallel_tool_calls: None,
+            instructions: None,
+            input: None,
+            prompt: None,
+            size: None,
+            quality: None,
+            person_generation: None,
+            thinking: Some(ThinkingConfig {
+                thinking_type: Some("enabled".to_string()),
+                budget_tokens: Some(16000),
+            }),
+        };
+
+        let result = transform_openai_request(&req, "test-p", "gemini-3-pro-preview");
+        let gen_config = &result["request"]["generationConfig"];
+
+        assert!(
+            gen_config.get("thinkingConfig").is_some(),
+            "thinkingConfig should be injected for gemini-3-pro"
+        );
+
+        let budget = gen_config["thinkingConfig"]["thinkingBudget"]
+            .as_i64()
+            .unwrap();
+        assert_eq!(budget, 16000);
     }
 }

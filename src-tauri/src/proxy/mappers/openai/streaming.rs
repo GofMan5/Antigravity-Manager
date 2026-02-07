@@ -5,52 +5,19 @@ use futures::{Stream, StreamExt};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::pin::Pin;
-use std::sync::{Mutex, OnceLock};
 use tracing::debug;
 use uuid::Uuid;
 
-// === 全局 ThoughtSignature 存储 ===
-// 用于在流式响应和后续请求之间传递签名，避免嵌入到用户可见的文本中
-static GLOBAL_THOUGHT_SIG: OnceLock<Mutex<Option<String>>> = OnceLock::new();
-
-fn get_thought_sig_storage() -> &'static Mutex<Option<String>> {
-    GLOBAL_THOUGHT_SIG.get_or_init(|| Mutex::new(None))
-}
-
-/// 保存 thoughtSignature 到全局存储
-/// 注意：只在新签名比现有签名更长时才存储，避免短签名覆盖有效签名
-pub fn store_thought_signature(sig: &str) {
-    if let Ok(mut guard) = get_thought_sig_storage().lock() {
-        let should_store = match &*guard {
-            None => true,                                 // 没有签名，直接存储
-            Some(existing) => sig.len() > existing.len(), // 只有新签名更长才存储
-        };
-
-        if should_store {
-            tracing::debug!(
-                "[ThoughtSig] 存储新签名 (长度: {}，替换旧长度: {:?})",
-                sig.len(),
-                guard.as_ref().map(|s| s.len())
-            );
-            *guard = Some(sig.to_string());
-        } else {
-            tracing::debug!(
-                "[ThoughtSig] 跳过短签名 (新长度: {}，现有长度: {})",
-                sig.len(),
-                guard.as_ref().map(|s| s.len()).unwrap_or(0)
-            );
-        }
+pub fn store_thought_signature(sig: &str, session_id: &str, message_count: usize) {
+    if sig.len() < 50 {
+        return;
     }
-}
 
-/// 获取全局存储的 thoughtSignature（不清除）
-#[allow(dead_code)]
-pub fn get_thought_signature() -> Option<String> {
-    if let Ok(guard) = get_thought_sig_storage().lock() {
-        guard.clone()
-    } else {
-        None
-    }
+    crate::proxy::SignatureCache::global().cache_session_signature(
+        session_id,
+        sig.to_string(),
+        message_count,
+    );
 }
 
 /// Extract and convert Gemini usageMetadata to OpenAI usage format
@@ -88,6 +55,8 @@ fn extract_usage_metadata(u: &Value) -> Option<super::models::OpenAIUsage> {
 pub fn create_openai_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     model: String,
+    session_id: String,
+    message_count: usize,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
 
@@ -166,7 +135,7 @@ pub fn create_openai_sse_stream(
                                                     }
                                                     // 捕获 thoughtSignature (Gemini 3 工具调用必需)
                                                     if let Some(sig) = part.get("thoughtSignature").or(part.get("thought_signature")).and_then(|s| s.as_str()) {
-                                                        store_thought_signature(sig);
+                                                        store_thought_signature(sig, &session_id, message_count);
                                                     }
 
                                                     if let Some(img) = part.get("inlineData") {
@@ -402,6 +371,8 @@ pub fn create_openai_sse_stream(
 pub fn create_legacy_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     model: String,
+    session_id: String,
+    message_count: usize,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
 
@@ -462,10 +433,9 @@ pub fn create_legacy_sse_stream(
                                                     // // content_out.push_str(thought_text);
                                                 }
                                                 */
-                                                // 捕获 thoughtSignature
-                                                // 捕获 thoughtSignature 到全局存储
+                                                // Capture thoughtSignature into session cache
                                                 if let Some(sig) = part.get("thoughtSignature").or(part.get("thought_signature")).and_then(|s| s.as_str()) {
-                                                    store_thought_signature(sig);
+                                                    store_thought_signature(sig, &session_id, message_count);
                                                 }
                                             }
                                         }
@@ -584,6 +554,8 @@ pub fn create_legacy_sse_stream(
 pub fn create_codex_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     _model: String,
+    session_id: String,
+    message_count: usize,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
 
@@ -675,7 +647,7 @@ pub fn create_codex_sse_stream(
                                                         // 捕获 thoughtSignature
                                                         if let Some(sig) = part.get("thoughtSignature").or(part.get("thought_signature")).and_then(|s| s.as_str()) {
                                                             tracing::debug!("[Codex-SSE] 捕获 thoughtSignature (长度: {})", sig.len());
-                                                            store_thought_signature(sig);
+                                                            store_thought_signature(sig, &session_id, message_count);
                                                         }
 
                                                         // Handle function call in chunk with deduplication

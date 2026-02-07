@@ -1,6 +1,7 @@
 //! Unit tests for streaming module.
 
 use super::*;
+use super::state::SignatureManager;
 use crate::proxy::mappers::claude::models::*;
 use serde_json::json;
 

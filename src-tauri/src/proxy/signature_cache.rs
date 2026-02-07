@@ -239,6 +239,14 @@ impl SignatureCache {
         None
     }
 
+    pub fn delete_session_signature(&self, session_id: &str) {
+        if let Ok(mut cache) = self.session_signatures.lock() {
+            if cache.remove(session_id).is_some() {
+                tracing::debug!("[SignatureCache] Deleted session signature for: {}", session_id);
+            }
+        }
+    }
+
     /// Clear all caches (for testing or manual reset)
     #[allow(dead_code)] // Used in tests
     pub fn clear(&self) {

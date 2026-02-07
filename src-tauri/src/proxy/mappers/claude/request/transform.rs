@@ -13,7 +13,6 @@ use super::thinking::{
 };
 use super::tools::build_tools;
 use crate::proxy::mappers::claude::models::*;
-use crate::proxy::mappers::signature_store::get_thought_signature;
 use crate::proxy::session_manager::SessionManager;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -125,8 +124,11 @@ pub fn transform_claude_request_in(
         .unwrap_or_else(|| should_enable_thinking_by_default(&claude_req.model));
 
     // Check if target model supports thinking
-    let target_model_supports_thinking = mapped_model.contains("-thinking")
-        || mapped_model.starts_with("claude-");
+    let mapped_model_lower = mapped_model.to_lowercase();
+    let target_model_supports_thinking = mapped_model_lower.contains("-thinking")
+        || mapped_model_lower.starts_with("claude-")
+        || mapped_model_lower.contains("gemini-2.0-pro")
+        || mapped_model_lower.contains("gemini-3-pro");
 
     if is_thinking_enabled && !target_model_supports_thinking {
         tracing::warn!(
@@ -149,7 +151,7 @@ pub fn transform_claude_request_in(
 
     // Check signature availability for function calls
     if is_thinking_enabled {
-        let global_sig = get_thought_signature();
+        let global_sig = crate::proxy::SignatureCache::global().get_session_signature(&session_id);
 
         let has_thinking_history = claude_req.messages.iter().any(|m| {
             if m.role == "assistant" {

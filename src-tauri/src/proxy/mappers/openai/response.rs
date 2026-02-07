@@ -22,15 +22,6 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                 .and_then(|p| p.as_array())
             {
                 for part in parts {
-                    // 捕获 thoughtSignature (Gemini 3 工具调用必需)
-                    if let Some(sig) = part
-                        .get("thoughtSignature")
-                        .or(part.get("thought_signature"))
-                        .and_then(|s| s.as_str())
-                    {
-                        super::streaming::store_thought_signature(sig);
-                    }
-
                     // 检查该 part 是否是思考内容 (thought: true)
                     let is_thought_part = part
                         .get("thought")

@@ -483,10 +483,20 @@ pub async fn handle_completions(
                 if client_wants_stream {
                     let mut openai_stream = if is_codex_style {
                         use crate::proxy::mappers::openai::streaming::create_codex_sse_stream;
-                        create_codex_sse_stream(Box::pin(gemini_stream), openai_req.model.clone())
+                        create_codex_sse_stream(
+                            Box::pin(gemini_stream),
+                            openai_req.model.clone(),
+                            session_id_str.clone(),
+                            openai_req.messages.len(),
+                        )
                     } else {
                         use crate::proxy::mappers::openai::streaming::create_legacy_sse_stream;
-                        create_legacy_sse_stream(Box::pin(gemini_stream), openai_req.model.clone())
+                        create_legacy_sse_stream(
+                            Box::pin(gemini_stream),
+                            openai_req.model.clone(),
+                            session_id_str.clone(),
+                            openai_req.messages.len(),
+                        )
                     };
 
                     let mut first_data_chunk = None;
@@ -556,7 +566,12 @@ pub async fn handle_completions(
                 } else {
                     use crate::proxy::mappers::openai::streaming::create_openai_sse_stream;
                     let mut openai_stream =
-                        create_openai_sse_stream(Box::pin(gemini_stream), openai_req.model.clone());
+                        create_openai_sse_stream(
+                            Box::pin(gemini_stream),
+                            openai_req.model.clone(),
+                            session_id_str.clone(),
+                            openai_req.messages.len(),
+                        );
 
                     let mut first_data_chunk = None;
                     let mut retry_this_account = false;
@@ -614,6 +629,8 @@ pub async fn handle_completions(
                     use crate::proxy::mappers::openai::collector::collect_stream_to_json;
                     match collect_stream_to_json(Box::pin(combined_stream)).await {
                         Ok(chat_resp) => {
+                            crate::proxy::SignatureCache::global()
+                                .delete_session_signature(&session_id_str);
                             let choices = chat_resp.choices.iter().map(|c| {
                                 json!({
                                     "text": match &c.message.content {
