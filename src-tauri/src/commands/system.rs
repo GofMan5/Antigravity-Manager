@@ -5,6 +5,42 @@
 use crate::error::{AppError, AppResult};
 use crate::modules;
 
+fn validate_text_file_path(path: &str) -> AppResult<()> {
+    if path.trim().is_empty() {
+        return Err(AppError::Validation("File path cannot be empty".to_string()));
+    }
+
+    let normalized = path.replace('\\', "/").to_ascii_lowercase();
+
+    if normalized.contains("../") || normalized.contains("..\\") || normalized.ends_with("/..") {
+        return Err(AppError::Validation(
+            "Path traversal is not allowed".to_string(),
+        ));
+    }
+
+    let forbidden_prefixes = [
+        "/etc/",
+        "/proc/",
+        "/sys/",
+        "/dev/",
+        "/root/",
+        "/var/spool/cron",
+        "c:/windows",
+        "c:/programdata",
+    ];
+
+    if forbidden_prefixes
+        .iter()
+        .any(|prefix| normalized.starts_with(prefix))
+    {
+        return Err(AppError::Security(
+            "Access to system-sensitive path is denied".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 // ============================================================================
 // File Operations
 // ============================================================================
@@ -12,6 +48,7 @@ use crate::modules;
 /// Save text to file (bypasses frontend scope restrictions)
 #[tauri::command]
 pub async fn save_text_file(path: String, content: String) -> AppResult<()> {
+    validate_text_file_path(&path)?;
     std::fs::write(&path, content)
         .map_err(|e| AppError::Io(e))
 }
@@ -19,6 +56,7 @@ pub async fn save_text_file(path: String, content: String) -> AppResult<()> {
 /// Read text from file (bypasses frontend scope restrictions)
 #[tauri::command]
 pub async fn read_text_file(path: String) -> AppResult<String> {
+    validate_text_file_path(&path)?;
     std::fs::read_to_string(&path)
         .map_err(|e| AppError::Io(e))
 }

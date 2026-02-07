@@ -12,7 +12,9 @@ pub fn load_app_config() -> Result<AppConfig, String> {
     let config_path = data_dir.join(CONFIG_FILE);
     
     if !config_path.exists() {
-        return Ok(AppConfig::new());
+        let config = AppConfig::new();
+        let _ = save_app_config(&config);
+        return Ok(config);
     }
     
     let content = fs::read_to_string(&config_path)

@@ -8,8 +8,46 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use std::path::Path;
 
 use crate::proxy::server::types::{AppState, ErrorResponse, SaveConfigWrapper, SaveFileRequest};
+
+fn validate_save_path(path: &str) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("File path cannot be empty".to_string());
+    }
+
+    let normalized = path.replace('\\', "/").to_ascii_lowercase();
+    if normalized.contains("../") || normalized.contains("..\\") || normalized.ends_with("/..") {
+        return Err("Path traversal is not allowed".to_string());
+    }
+
+    let forbidden_prefixes = [
+        "/etc/",
+        "/proc/",
+        "/sys/",
+        "/dev/",
+        "/root/",
+        "/var/spool/cron",
+        "c:/windows",
+        "c:/programdata",
+    ];
+
+    if forbidden_prefixes
+        .iter()
+        .any(|prefix| normalized.starts_with(prefix))
+    {
+        return Err("Access to system-sensitive path is denied".to_string());
+    }
+
+    if let Some(parent) = Path::new(path).parent() {
+        if !parent.exists() {
+            return Err("Target directory does not exist".to_string());
+        }
+    }
+
+    Ok(())
+}
 
 // ============================================================================
 // Configuration
@@ -186,6 +224,10 @@ pub async fn get_data_dir_path() -> impl IntoResponse {
 pub async fn save_text_file(
     Json(payload): Json<SaveFileRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    if let Err(e) = validate_save_path(&payload.path) {
+        return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })));
+    }
+
     let res = tokio::task::spawn_blocking(move || {
         std::fs::write(&payload.path, &payload.content)
     })

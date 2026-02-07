@@ -491,6 +491,47 @@ async fn handle_google_flow(
             token_manager.mark_rate_limited_async(&email, status_code, retry_after.as_deref(), &error_text, Some(&request_with_mapped.model)).await;
         }
 
+        if status_code == 403 {
+            if let Some(acc_id) = token_manager.get_account_id_by_email(&email) {
+                if is_validation_required_error(&error_text) {
+                    let block_minutes = crate::modules::config::load_app_config()
+                        .map(|cfg| cfg.validation_block_minutes as i64)
+                        .unwrap_or(10);
+                    let block_until = chrono::Utc::now().timestamp() + (block_minutes * 60);
+
+                    tracing::warn!(
+                        "[{}] Claude VALIDATION_REQUIRED on {}, blocking for {} minutes",
+                        trace_id,
+                        email,
+                        block_minutes
+                    );
+
+                    if let Err(e) = token_manager
+                        .set_validation_block_public(&acc_id, block_until, &error_text)
+                        .await
+                    {
+                        tracing::error!("Failed to set validation block for {}: {}", email, e);
+                    }
+                } else if is_permanent_forbidden_error(&error_text) {
+                    tracing::warn!(
+                        "[{}] Claude permanent 403 on {}, marking forbidden",
+                        trace_id,
+                        email
+                    );
+
+                    if let Err(e) = token_manager.set_forbidden(&acc_id, &error_text).await {
+                        tracing::error!("Failed to set forbidden for {}: {}", email, e);
+                    }
+                } else {
+                    tracing::warn!(
+                        "[{}] Claude transient/unknown 403 on {}, rotate without permanent forbid",
+                        trace_id,
+                        email
+                    );
+                }
+            }
+        }
+
         // [FIX] Don't block account in Circuit Breaker for 429 (handled by Smart Rate Limiter)
         if status_code == 402 || status_code == 401 {
             token_manager.report_account_failure(&token_lease.account_id, status_code, &error_text);
@@ -544,6 +585,22 @@ async fn handle_google_flow(
         last_email.as_deref(),
         last_mapped_model.as_deref(),
     )
+}
+
+fn is_validation_required_error(error_text: &str) -> bool {
+    let lower = error_text.to_ascii_lowercase();
+    lower.contains("validation_required")
+        || lower.contains("verify your account")
+        || lower.contains("validation_url")
+}
+
+fn is_permanent_forbidden_error(error_text: &str) -> bool {
+    let lower = error_text.to_ascii_lowercase();
+    lower.contains("account disabled")
+        || lower.contains("account suspended")
+        || lower.contains("account has been blocked")
+        || lower.contains("account banned")
+        || (lower.contains("policy") && lower.contains("violation"))
 }
 
 async fn handle_streaming_response(

@@ -79,8 +79,13 @@ pub fn run() {
             // Load config
             match modules::config::load_app_config() {
                 Ok(mut config) => {
+                    let mut modified = false;
+
                     // Force LAN access in headless/docker mode so it binds to 0.0.0.0
-                    config.proxy.allow_lan_access = true;
+                    if !config.proxy.allow_lan_access {
+                        config.proxy.allow_lan_access = true;
+                        modified = true;
+                    }
 
                     // [NEW] 支持通过环境变量注入 API Key
                     // 优先级：ABV_API_KEY > API_KEY > 配置文件
@@ -91,7 +96,10 @@ pub fn run() {
                     if let Some(key) = env_key {
                         if !key.trim().is_empty() {
                             info!("Using API Key from environment variable");
-                            config.proxy.api_key = key;
+                            if config.proxy.api_key != key {
+                                config.proxy.api_key = key;
+                                modified = true;
+                            }
                         }
                     }
 
@@ -104,7 +112,10 @@ pub fn run() {
                     if let Some(pwd) = env_web_password {
                         if !pwd.trim().is_empty() {
                             info!("Using Web UI Password from environment variable");
-                            config.proxy.admin_password = Some(pwd);
+                            if config.proxy.admin_password.as_deref() != Some(pwd.as_str()) {
+                                config.proxy.admin_password = Some(pwd);
+                                modified = true;
+                            }
                         }
                     }
 
@@ -127,7 +138,34 @@ pub fn run() {
                         };
                         if let Some(m) = mode {
                             info!("Using Auth Mode from environment variable: {:?}", m);
-                            config.proxy.auth_mode = m;
+                            let needs_update = !matches!(
+                                (&config.proxy.auth_mode, &m),
+                                (
+                                    crate::proxy::ProxyAuthMode::Off,
+                                    crate::proxy::ProxyAuthMode::Off
+                                ) | (
+                                    crate::proxy::ProxyAuthMode::Strict,
+                                    crate::proxy::ProxyAuthMode::Strict
+                                ) | (
+                                    crate::proxy::ProxyAuthMode::AllExceptHealth,
+                                    crate::proxy::ProxyAuthMode::AllExceptHealth
+                                ) | (
+                                    crate::proxy::ProxyAuthMode::Auto,
+                                    crate::proxy::ProxyAuthMode::Auto
+                                )
+                            );
+                            if needs_update {
+                                config.proxy.auth_mode = m;
+                                modified = true;
+                            }
+                        }
+                    }
+
+                    if modified {
+                        if let Err(e) = modules::config::save_app_config(&config) {
+                            error!("Failed to persist headless config overrides: {}", e);
+                        } else {
+                            info!("Persisted headless config overrides to gui_config.json");
                         }
                     }
 

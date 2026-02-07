@@ -41,6 +41,7 @@ async fn auth_middleware_internal(
 
     // 过滤心跳和健康检查请求,避免日志噪音
     let is_health_check = path == "/healthz" || path == "/api/health" || path == "/health";
+    let is_internal_endpoint = path.starts_with("/internal/");
     if !path.contains("event_logging") && !is_health_check {
         tracing::info!("Request: {} {}", method, path);
     } else {
@@ -58,6 +59,10 @@ async fn auth_middleware_internal(
     // 权限检查逻辑
     if !force_strict {
         // AI 代理接口 (v1/chat/completions 等)
+        if is_internal_endpoint {
+            return Ok(next.run(request).await);
+        }
+
         if matches!(effective_mode, ProxyAuthMode::Off) {
             return Ok(next.run(request).await);
         }
@@ -135,6 +140,7 @@ async fn auth_middleware_internal(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::config::SecurityMonitorConfig;
     use crate::proxy::ProxyAuthMode;
 
     #[tokio::test]
@@ -145,6 +151,7 @@ mod tests {
             admin_password: Some("admin123".to_string()),
             allow_lan_access: true,
             port: 8045,
+            security_monitor: SecurityMonitorConfig::default(),
         }));
 
         // 模拟请求 - 管理接口使用正确的管理密码

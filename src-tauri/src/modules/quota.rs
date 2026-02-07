@@ -59,7 +59,11 @@ fn create_client() -> reqwest::Client {
 
 /// Get shared HTTP Client (60s timeout)
 fn create_warmup_client() -> reqwest::Client {
-    crate::utils::http::get_long_client()
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .no_proxy()
+        .build()
+        .unwrap_or_else(|_| crate::utils::http::get_long_client())
 }
 
 const CLOUD_CODE_BASE_URL: &str = "https://daily-cloudcode-pa.sandbox.googleapis.com";

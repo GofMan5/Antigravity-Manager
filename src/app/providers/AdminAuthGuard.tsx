@@ -17,14 +17,24 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
     useEffect(() => {
         if (isTauri()) return;
 
-        // 检查本地存储
+        const sessionKey = sessionStorage.getItem('abv_admin_api_key');
+        if (sessionKey) {
+            setIsAuthenticated(true);
+            setApiKey(sessionKey);
+            return;
+        }
+
         const savedKey = localStorage.getItem('abv_admin_api_key');
         if (savedKey) {
+            sessionStorage.setItem('abv_admin_api_key', savedKey);
+            localStorage.removeItem('abv_admin_api_key');
+            setApiKey(savedKey);
             setIsAuthenticated(true);
         }
 
         // 监听全局 401 事件
         const handleUnauthorized = () => {
+            sessionStorage.removeItem('abv_admin_api_key');
             localStorage.removeItem('abv_admin_api_key');
             setIsAuthenticated(false);
         };
@@ -36,7 +46,8 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
         if (apiKey.trim()) {
-            localStorage.setItem('abv_admin_api_key', apiKey.trim());
+            sessionStorage.setItem('abv_admin_api_key', apiKey.trim());
+            localStorage.removeItem('abv_admin_api_key');
             setIsAuthenticated(true);
             window.location.reload();
         }
