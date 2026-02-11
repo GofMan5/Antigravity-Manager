@@ -238,7 +238,7 @@ pub async fn handle_images_generations(
 
     for idx in 0..n {
         let gemini_body = json!({
-            "project": "bamboo-precept-lgxtn",
+            "project": crate::proxy::project_resolver::DEFAULT_PROJECT_ID,
             "requestId": format!("agent-{}", uuid::Uuid::new_v4()),
             "model": "gemini-3-pro-image",
             "userAgent": "antigravity",
@@ -485,7 +485,7 @@ pub async fn handle_images_edits(
 
     // 4. Construct Request Body
     let gemini_body = json!({
-        "project": "bamboo-precept-lgxtn",
+        "project": crate::proxy::project_resolver::DEFAULT_PROJECT_ID,
         "requestId": format!("img-edit-{}", uuid::Uuid::new_v4()),
         "model": model,
         "userAgent": "antigravity",

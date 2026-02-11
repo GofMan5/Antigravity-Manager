@@ -43,6 +43,48 @@ impl TokenManager {
         Ok(())
     }
 
+    /// Clear cached project ID from memory and account file
+    pub async fn clear_project_id_cache(&self, account_id: &str) -> Result<(), String> {
+        if !Self::account_exists_in_index(account_id) {
+            tracing::warn!(
+                "clear_project_id_cache: Account {} not in index, skipping",
+                account_id
+            );
+            self.tokens.remove(account_id);
+            return Ok(());
+        }
+
+        if let Some(mut entry) = self.tokens.get_mut(account_id) {
+            entry.project_id = None;
+        }
+
+        let path = if let Some(entry) = self.tokens.get(account_id) {
+            entry.account_path.clone()
+        } else {
+            self.data_dir
+                .join("accounts")
+                .join(format!("{}.json", account_id))
+        };
+
+        let mut content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {}", e))?,
+        )
+        .map_err(|e| format!("解析 JSON 失败: {}", e))?;
+
+        if let Some(token_obj) = content.get_mut("token").and_then(|v| v.as_object_mut()) {
+            token_obj.insert("project_id".to_string(), serde_json::Value::Null);
+        } else {
+            return Err("账号文件缺少 token 对象，无法清理 project_id 缓存".to_string());
+        }
+
+        let json_str = serde_json::to_string_pretty(&content)
+            .map_err(|e| format!("序列化 JSON 失败: {}", e))?;
+
+        std::fs::write(&path, json_str).map_err(|e| format!("写入文件失败: {}", e))?;
+        tracing::warn!("Cleared cached project_id for account {} ({:?})", account_id, path);
+        Ok(())
+    }
+
     /// Save refreshed token to account file
     pub(crate) async fn save_refreshed_token(
         &self,
@@ -216,7 +258,8 @@ impl TokenManager {
                 None => return Err(format!("未找到账号: {}", email)),
             };
 
-        let project_id = project_id_opt.unwrap_or_else(|| "bamboo-precept-lgxtn".to_string());
+        let project_id = project_id_opt
+            .unwrap_or_else(|| crate::proxy::project_resolver::DEFAULT_PROJECT_ID.to_string());
 
         if now < timestamp + expires_in - 300 {
             return Ok((current_access_token, project_id, email.to_string(), 0));
@@ -283,7 +326,7 @@ impl TokenManager {
         let project_id =
             crate::proxy::project_resolver::fetch_project_id(&token_info.access_token)
                 .await
-                .unwrap_or_else(|_| "bamboo-precept-lgxtn".to_string());
+                .unwrap_or_else(|_| crate::proxy::project_resolver::DEFAULT_PROJECT_ID.to_string());
 
         let email_clone = email.to_string();
         let refresh_token_clone = refresh_token.to_string();

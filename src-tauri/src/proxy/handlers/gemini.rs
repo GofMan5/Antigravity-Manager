@@ -10,6 +10,10 @@ use crate::proxy::handlers::common::{determine_retry_strategy, apply_retry_strat
 use crate::proxy::debug_logger;
  
 const MAX_RETRY_ATTEMPTS: usize = 3;
+
+fn is_project_not_found_404(error_text: &str) -> bool {
+    error_text.contains("Resource projects/") && error_text.contains("could not be found")
+}
  
 /// 处理 generateContent 和 streamGenerateContent
 /// 路径参数: model_name, method (e.g. "gemini-pro", "generateContent")
@@ -440,6 +444,31 @@ pub async fn handle_generate(
             continue; // 重试
         }
  
+        if status_code == 404 && is_project_not_found_404(&error_text) {
+            tracing::warn!(
+                "[Gemini] project_id invalid for account {}, clearing cache and retrying with account rotation",
+                email
+            );
+
+            if let Some(acc_id) = token_manager.get_account_id_by_email(&email) {
+                if let Err(e) = token_manager.clear_project_id_cache(&acc_id).await {
+                    tracing::warn!(
+                        "[Gemini] failed to clear cached project_id for {}: {}",
+                        email,
+                        e
+                    );
+                }
+
+                token_manager.report_account_failure(
+                    &acc_id,
+                    401,
+                    "project_id not found; force rotate after cache clear",
+                );
+            }
+
+            continue;
+        }
+
         // 404 等由于模型配置或路径错误的 HTTP 异常，直接报错，不进行无效轮换
         error!("Gemini Upstream non-retryable error {}: {}", status_code, error_text);
         return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());

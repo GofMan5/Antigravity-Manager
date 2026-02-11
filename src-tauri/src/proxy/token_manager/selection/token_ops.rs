@@ -79,7 +79,18 @@ impl TokenManager {
         need_update_last_used: &mut Option<(String, std::time::Instant)>,
     ) -> Result<String, String> {
         if let Some(pid) = &token.project_id {
-            return Ok(pid.clone());
+            if crate::proxy::project_resolver::is_legacy_mock_project_id(pid) {
+                tracing::warn!(
+                    "Detected legacy mock project_id for {}, clearing cache and re-resolving",
+                    token.email
+                );
+                if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                    entry.project_id = None;
+                }
+                let _ = self.clear_project_id_cache(&token.account_id).await;
+            } else {
+                return Ok(pid.clone());
+            }
         }
 
         tracing::debug!("账号 {} 缺少 project_id，尝试获取...", token.email);
@@ -92,16 +103,31 @@ impl TokenManager {
                 Ok(pid)
             }
             Err(e) => {
-                tracing::error!("Failed to fetch project_id for {}: {}", token.email, e);
-                *last_error = Some(format!("Failed to fetch project_id for {}: {}", token.email, e));
-                attempted.insert(token.account_id.clone());
+                tracing::warn!(
+                    "Failed to fetch project_id for {}: {}, fallback to default {}",
+                    token.email,
+                    e,
+                    crate::proxy::project_resolver::DEFAULT_PROJECT_ID
+                );
 
-                if quota_group != "image_gen" {
-                    if matches!(last_used_account_id, Some((id, _)) if id == &token.account_id) {
-                        *need_update_last_used = Some((String::new(), std::time::Instant::now()));
-                    }
+                let fallback = crate::proxy::project_resolver::DEFAULT_PROJECT_ID.to_string();
+                if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                    entry.project_id = Some(fallback.clone());
                 }
-                Err("continue".to_string())
+                let _ = self.save_project_id(&token.account_id, &fallback).await;
+
+                if quota_group != "image_gen"
+                    && matches!(last_used_account_id, Some((id, _)) if id == &token.account_id)
+                {
+                    *need_update_last_used = Some((token.account_id.clone(), std::time::Instant::now()));
+                }
+
+                // Keep account available with stable fallback instead of dropping it from current round.
+                *last_error = Some(format!(
+                    "Using fallback project_id for {} after resolver error: {}",
+                    token.email, e
+                ));
+                Ok(fallback)
             }
         }
     }

@@ -318,9 +318,38 @@ impl TokenManager {
                         }
                     }
 
-                    // Ensure project_id exists
+                    // Ensure project_id exists (and purge legacy random mock IDs)
                     let project_id = if let Some(pid) = &token.project_id {
-                        pid.clone()
+                        if crate::proxy::project_resolver::is_legacy_mock_project_id(pid) {
+                            tracing::warn!(
+                                "Preferred account {} has legacy mock project_id, resetting cache",
+                                token.email
+                            );
+                            if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                                entry.project_id = None;
+                            }
+                            let _ = self.clear_project_id_cache(&token.account_id).await;
+
+                            match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await {
+                                Ok(new_pid) => {
+                                    if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                                        entry.project_id = Some(new_pid.clone());
+                                    }
+                                    let _ = self.save_project_id(&token.account_id, &new_pid).await;
+                                    new_pid
+                                }
+                                Err(_) => {
+                                    let fallback = crate::proxy::project_resolver::DEFAULT_PROJECT_ID.to_string();
+                                    if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                                        entry.project_id = Some(fallback.clone());
+                                    }
+                                    let _ = self.save_project_id(&token.account_id, &fallback).await;
+                                    fallback
+                                }
+                            }
+                        } else {
+                            pid.clone()
+                        }
                     } else {
                         match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await {
                             Ok(pid) => {
@@ -330,7 +359,14 @@ impl TokenManager {
                                 let _ = self.save_project_id(&token.account_id, &pid).await;
                                 pid
                             }
-                            Err(_) => "bamboo-precept-lgxtn".to_string(), // fallback
+                            Err(_) => {
+                                let fallback = crate::proxy::project_resolver::DEFAULT_PROJECT_ID.to_string();
+                                if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                                    entry.project_id = Some(fallback.clone());
+                                }
+                                let _ = self.save_project_id(&token.account_id, &fallback).await;
+                                fallback
+                            }
                         }
                     };
 

@@ -128,14 +128,25 @@ pub async fn fetch_quota_with_cache(
 ) -> crate::error::AppResult<(QuotaData, Option<String>)> {
     use crate::error::AppError;
     
-    // Optimization: Skip loadCodeAssist call if project_id is cached to save API quota
+    // Optimization: Skip loadCodeAssist call if project_id is cached to save API quota.
+    // Legacy random mock IDs are invalid and must be re-resolved.
     let (project_id, subscription_tier) = if let Some(pid) = cached_project_id {
-        (Some(pid.to_string()), None)
+        if crate::proxy::project_resolver::is_legacy_mock_project_id(pid) {
+            crate::modules::logger::log_warn(&format!(
+                "⚠️  [{}] legacy mock project_id detected in cache, forcing re-resolve",
+                email
+            ));
+            fetch_project_id(access_token, email).await
+        } else {
+            (Some(pid.to_string()), None)
+        }
     } else {
         fetch_project_id(access_token, email).await
     };
     
-    let final_project_id = project_id.as_deref().unwrap_or("bamboo-precept-lgxtn");
+    let final_project_id = project_id
+        .as_deref()
+        .unwrap_or(crate::proxy::project_resolver::DEFAULT_PROJECT_ID);
     
     let client = create_client();
     let payload = json!({
@@ -266,7 +277,8 @@ pub async fn get_valid_token_for_warmup(account: &crate::models::account::Accoun
     
     // Fetch project_id
     let (project_id, _) = fetch_project_id(&account.token.access_token, &account.email).await;
-    let final_pid = project_id.unwrap_or_else(|| "bamboo-precept-lgxtn".to_string());
+    let final_pid =
+        project_id.unwrap_or_else(|| crate::proxy::project_resolver::DEFAULT_PROJECT_ID.to_string());
     
     Ok((account.token.access_token, final_pid))
 }
